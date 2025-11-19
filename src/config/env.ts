@@ -31,6 +31,15 @@ const schema = z.object({
   OTP_SEND_ON_GENERATE: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
   REDIS_URL: z.string().optional(),
   ENABLE_WORKERS: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+  QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  TEMPLATE_DIR: z.string().default('templates'),
+
+  // Idempotency
+  IDEMPOTENCY_TTL_SEC: z.coerce.number().int().positive().default(24 * 60 * 60),
+  ENABLE_IDEMPOTENCY_MW: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+
+  // Signature verification
+  SIGNATURE_TOLERANCE_SEC: z.coerce.number().int().positive().default(60),
 
   ENABLE_REFUNDS: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
   REFUND_LIMIT_CENTS: z.coerce.number().int().positive().default(5000)

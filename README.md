@@ -21,7 +21,7 @@ The server starts on `http://localhost:3000`.
 ## Endpoints
 
 - POST `/webhook/entry` — public ingress
-  - Headers: `X-Signature` (HMAC-SHA256 over raw body), optional `X-Timestamp`, optional `X-Idempotency-Key`
+  - Headers: `X-Signature` (HMAC-SHA256 over raw body), `X-Timestamp` (epoch seconds, ±60s), optional `X-Idempotency-Key`
   - Body: JSON; normalized internally
   - Response: `{ status: "accepted", internal_event_id }`
 
@@ -35,7 +35,7 @@ The server starts on `http://localhost:3000`.
 
 ## Notes
 - n8n ingest URL/token via `N8N_INGEST_URL` and `N8N_TOKEN`
-- Idempotency via deterministic `internal_event_id` and TTL index (72h)
+- Deduplication via deterministic `internal_event_id` with 72h TTL; optional idempotency caching via `X-Idempotency-Key` (enable with `ENABLE_IDEMPOTENCY_MW=true`) with TTL (`IDEMPOTENCY_TTL_SEC`)
 - All secrets via environment; repo contains no secrets
 
 ---
@@ -161,6 +161,7 @@ SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "YOUR_HMAC_SECRET" |
 curl -X POST http://localhost:3000/webhook/entry \
   -H "Content-Type: application/json" \
   -H "X-Signature: sha256=$SIGNATURE" \
+  -H "X-Timestamp: $(date -u +%s)" \
   -d "$PAYLOAD"
 
 # Expected: Event flows through backend → Workflow A → B → C
@@ -190,6 +191,22 @@ curl -X POST http://localhost:3000/webhook/entry \
 **See `IMPLEMENTATION_STATUS.md` for complete deployment plan.**
 
 ---
+
+## OpenAPI Spec
+
+- API is documented in `openapi.yaml`. You can load it in Swagger UI locally or your API gateway.
+
+## Templates
+
+- Message/email templates can be stored in `templates/` (configure with `TEMPLATE_DIR`).
+- Supports `template_id.json` with `{ "subject": "...", "text": "..." }` or `template_id.txt` for plain text.
+- Falls back to built-in defaults if file not found.
+
+## Queues & Workers
+
+- Queue backend is BullMQ-ready. To enable:
+  - Install `bullmq`, set `REDIS_URL`, and `ENABLE_WORKERS=true`.
+  - Configure `QUEUE_CONCURRENCY` (default 5). Start workers via PM2 (`worker` app) or `dist/workers/index.js`.
 
 ## 🆘 Need Help?
 

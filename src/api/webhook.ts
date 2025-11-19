@@ -4,9 +4,10 @@ import { webhookRateLimiter } from '../middleware/rateLimit';
 import { blockList } from '../middleware/blockList';
 import { validateAndNormalizePayload } from '../middleware/validatePayload';
 import { deduplicate } from '../middleware/dedup';
-import { forwardToN8n } from '../services/eventRouter';
-import { logger } from '../lib/logger';
 import bodyParser from 'body-parser';
+import { idempotency } from '../middleware/idempotency';
+import { env } from '../config/env';
+import { handleWebhookEntry } from '../controllers/webhookController';
 
 export function registerWebhookRoutes(app: Express): void {
   app.post(
@@ -20,6 +21,7 @@ export function registerWebhookRoutes(app: Express): void {
     blockList,
     webhookRateLimiter(),
     verifyHmacSignature(),
+    (env.ENABLE_IDEMPOTENCY_MW ? idempotency() : (_req, _res, next) => next()),
     validateAndNormalizePayload,
     async (req: Request, res: Response, next) => {
       try {
@@ -28,20 +30,7 @@ export function registerWebhookRoutes(app: Express): void {
         next(e);
       }
     },
-    async (req: Request, res: Response) => {
-      const internalEventId = (req as any).internal_event_id as string;
-      const correlationId = (req as any).correlationId as string | undefined;
-      const normalized = (req as any).normalizedPayload || {};
-      const result = await forwardToN8n({
-        payload: { ...normalized, internal_event_id: internalEventId },
-        internalEventId,
-        correlationId
-      });
-      if (!result.ok) {
-        logger.error(`n8n forward failed status=${result.status}`);
-      }
-      res.status(200).json({ status: 'accepted', internal_event_id: internalEventId });
-    }
+    handleWebhookEntry
   );
 }
 

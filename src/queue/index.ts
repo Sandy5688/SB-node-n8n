@@ -1,5 +1,6 @@
 import { logger } from '../lib/logger';
 import { env } from '../config/env';
+import { enqueueJob } from './processor';
 
 export type EnqueueResult = { ok: boolean; queued?: boolean; reason?: string };
 
@@ -8,9 +9,13 @@ export async function enqueue(jobName: string, data: Record<string, any>): Promi
     logger.info(`Queue disabled; skipping enqueue for job=${jobName}`);
     return { ok: true, queued: false, reason: 'queue_disabled' };
   }
-  // Placeholder: integrate BullMQ or other queue here.
-  logger.info(`Queue enabled but no backend configured; received job=${jobName}`);
-  return { ok: true, queued: false, reason: 'backend_not_configured' };
+  try {
+    const res = await enqueueJob(jobName, data);
+    return { ok: res.ok, queued: true };
+  } catch (e: any) {
+    logger.error(`Failed to enqueue job=${jobName}: ${e?.message}`);
+    return { ok: false, queued: false, reason: 'enqueue_failed' };
+  }
 }
 
 

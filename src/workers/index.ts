@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
+import { startWorkers } from '../queue/worker';
 
 async function start() {
   if (!env.ENABLE_WORKERS) {
@@ -7,8 +8,8 @@ async function start() {
     process.exit(0);
     return;
   }
-  logger.info('Workers started (no jobs configured yet).');
-  // Add job processors here when queue backend is added.
+  await startWorkers();
+  // Keep process alive:
   // Keep process alive:
   setInterval(() => {}, 1 << 30);
 }

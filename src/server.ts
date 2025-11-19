@@ -17,6 +17,9 @@ import { registerRefundRoutes } from './api/refunds';
 import { logger } from './lib/logger';
 import { getDb } from './db/mongo';
 import { env } from './config/env';
+import { registerAuthRoutes } from './api/auth';
+import { registerUserRoutes } from './api/user';
+import { registerFlowRoutes } from './api/flow';
 
 const app = express();
 
@@ -53,6 +56,9 @@ registerAlertRoutes(app);
 registerHealthRoutes(app);
 registerMetricsRoutes(app);
 registerRefundRoutes(app);
+registerAuthRoutes(app);
+registerUserRoutes(app);
+registerFlowRoutes(app);
 
 // 404 handler
 app.use((_req, res) => res.status(404).json({ error: { message: 'Not Found' } }));

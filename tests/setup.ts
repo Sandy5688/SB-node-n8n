@@ -29,4 +29,8 @@ jest.mock('@slack/web-api', () => {
   };
 });
 
+// Minimal env for tests
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/testdb';
+process.env.HMAC_SECRET = process.env.HMAC_SECRET || 'test_secret';
+
 

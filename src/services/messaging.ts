@@ -3,7 +3,7 @@ import sgMail from '@sendgrid/mail';
 import { WebClient } from '@slack/web-api';
 import { getDb } from '../db/mongo';
 import { logger } from '../lib/logger';
-import Mustache from 'mustache';
+import { renderTemplate as renderExternalTemplate } from './templates';
 
 type Channel = 'sms' | 'email' | 'slack';
 
@@ -17,16 +17,8 @@ type SendRequest = {
 };
 
 async function renderTemplate(templateId: string, params: Record<string, any> = {}): Promise<{ subject?: string; text: string }> {
-  // Placeholder: in production, load from DB or filesystem
-  const registry: Record<string, { subject?: string; text: string }> = {
-    'otp': { subject: 'Your verification code', text: 'Your code is {{code}}.' },
-    'generic': { subject: 'Notification', text: '{{message}}' }
-  };
-  const tpl = registry[templateId] || { text: JSON.stringify(params) };
-  return {
-    subject: tpl.subject ? Mustache.render(tpl.subject, params) : undefined,
-    text: Mustache.render(tpl.text, params)
-  };
+  const tpl = await renderExternalTemplate(templateId, params);
+  return tpl;
 }
 
 async function sendSms(to: string, body: string): Promise<{ ok: boolean; providerId?: string; error?: string }> {
@@ -92,6 +84,18 @@ export async function sendMessageWithFallback(req: SendRequest) {
         $inc: { attempts: 1 }
       }
     );
+    if (!result.ok) {
+      try {
+        const { auditLog } = await import('./audit');
+        await auditLog({
+          action: 'messaging_failed',
+          correlationId: req.correlationId,
+          details: { channel, to, template_id: req.template_id, error: result.error }
+        } as any);
+      } catch {
+        // ignore
+      }
+    }
     return result;
   }
 

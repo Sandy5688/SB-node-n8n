@@ -12,6 +12,8 @@ cp env.example .env
 # 3. Generate secrets
 echo "HMAC_SECRET=$(openssl rand -hex 32)" >> .env
 echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
+# (Optional) Enable idempotency middleware to test header-based caching
+# echo "ENABLE_IDEMPOTENCY_MW=true" >> .env
 
 # 4. Start backend
 npm run dev
@@ -93,6 +95,7 @@ curl -X POST http://localhost:3000/webhook/entry \
 curl -X POST http://localhost:3000/webhook/entry \
   -H "Content-Type: application/json" \
   -H "X-Signature: sha256=invalid" \
+  -H "X-Timestamp: $(date -u +%s)" \
   -d '{"source":"test"}'
 
 # Missing required field → 400
@@ -101,6 +104,7 @@ SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$HMAC_SECRET" | awk
 curl -X POST http://localhost:3000/webhook/entry \
   -H "Content-Type: application/json" \
   -H "X-Signature: sha256=$SIGNATURE" \
+  -H "X-Timestamp: $(date -u +%s)" \
   -d "$PAYLOAD"
 ```
 
@@ -389,32 +393,47 @@ idempotency_hits_total 2
 ## Test 9: Idempotency
 
 ```bash
-# Send same payload twice
+# A) Deduplication (no header) — ensures single processing by internal_event_id
 PAYLOAD='{"source":"test_idem","user_id":"user_99","action":"test"}'
 SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$HMAC_SECRET" | awk '{print $2}')
 
-# First request
-RESPONSE1=$(curl -s -X POST http://localhost:3000/webhook/entry \
+curl -s -X POST http://localhost:3000/webhook/entry \
   -H "Content-Type: application/json" \
   -H "X-Signature: sha256=$SIGNATURE" \
-  -d "$PAYLOAD")
-echo "Response 1: $RESPONSE1"
+  -H "X-Timestamp: $(date -u +%s)" \
+  -d "$PAYLOAD" | tee /tmp/resp1.json
 
-# Second request (same payload)
-RESPONSE2=$(curl -s -X POST http://localhost:3000/webhook/entry \
+curl -s -X POST http://localhost:3000/webhook/entry \
   -H "Content-Type: application/json" \
   -H "X-Signature: sha256=$SIGNATURE" \
-  -d "$PAYLOAD")
-echo "Response 2: $RESPONSE2"
+  -H "X-Timestamp: $(date -u +%s)" \
+  -d "$PAYLOAD" | tee /tmp/resp2.json
 
-# Both should return same internal_event_id
-# Only one record in processed_events collection
+# B) Idempotency header (requires ENABLE_IDEMPOTENCY_MW=true)
+IDEMP_KEY="test-key-$(date +%s)"
+curl -s -X POST http://localhost:3000/webhook/entry \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: sha256=$SIGNATURE" \
+  -H "X-Timestamp: $(date -u +%s)" \
+  -H "X-Idempotency-Key: $IDEMP_KEY" \
+  -d "$PAYLOAD" | tee /tmp/idem1.json
+
+curl -s -D - -o /tmp/idem2_body.json -X POST http://localhost:3000/webhook/entry \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: sha256=$SIGNATURE" \
+  -H "X-Timestamp: $(date -u +%s)" \
+  -H "X-Idempotency-Key: $IDEMP_KEY" \
+  -d "$PAYLOAD"
+
+# Expect: second request has header "Idempotency-Replayed: true" and same body/status
 ```
 
 **Verify in MongoDB:**
 ```javascript
 db.processed_events.find({ internal_event_id: /test_idem/ }).count()
 // Should return 1, not 2
+db.idempotency_keys.find().sort({createdAt:-1}).limit(1)
+// Should show stored response if ENABLE_IDEMPOTENCY_MW=true
 ```
 
 ---

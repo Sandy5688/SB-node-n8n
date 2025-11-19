@@ -14,13 +14,13 @@ All 15 tasks from `project-guide.txt` have been implemented in the backend. The 
 
 **Implementation:**
 - `src/api/webhook.ts` - Single public entry point `/webhook/entry`
-- `src/middleware/signature.ts` - HMAC-SHA256 verification with `X-Signature` header
+- `src/middleware/signature.ts` - HMAC-SHA256 verification with `X-Signature` header and required `X-Timestamp` (±60s tolerance), plus replay guard via TTL cache
 - `src/middleware/rateLimit.ts` - 100 req/min per IP (configurable via `RATE_LIMIT_PER_MINUTE`)
 - `src/middleware/blockList.ts` - Blocklist with MongoDB `blocked_ips` collection
 - `src/lib/hmac.ts` - Secure constant-time comparison
 
 **Files:**
-- ✅ `src/middleware/signature.ts` - Validates `X-Signature: sha256=<hex>`
+- ✅ `src/middleware/signature.ts` - Validates `X-Signature: sha256=<hex>` and `X-Timestamp`
 - ✅ `src/middleware/rateLimit.ts` - Express rate limiter with memory store
 - ✅ `src/middleware/blockList.ts` - Check against MongoDB blocked IPs
 - ✅ `src/server.ts` - Applied to `/webhook/entry` route only
@@ -79,23 +79,32 @@ All 15 tasks from `project-guide.txt` have been implemented in the backend. The 
 **Status: COMPLETE**
 
 **Implementation:**
-- `src/middleware/dedup.ts` - Deterministic `internal_event_id` generation
-- `src/db/indexes.ts` - Unique index on `internal_event_id` with 72h TTL
-- SHA256-based ID from canonical JSON + source + timestamp bucket
-- Early return 200 if duplicate detected
+- Dedup: `src/middleware/dedup.ts` — deterministic `internal_event_id` (72h TTL in `processed_events`)
+- Idempotency: `src/middleware/idempotency.ts` — optional caching via `X-Idempotency-Key` (enable with `ENABLE_IDEMPOTENCY_MW=true`), stores response for the TTL (`IDEMPOTENCY_TTL_SEC`), replays same response for duplicates, returns 409 while first request is in-progress
 
 **Files:**
 - ✅ `src/middleware/dedup.ts` - Computes deterministic ID, checks MongoDB
-- ✅ `src/db/indexes.ts` - Creates TTL index (72h) on `processed_events.createdAt`
+- ✅ `src/middleware/idempotency.ts` - Mongo-backed idempotency caching keyed by header + request hash
+- ✅ `src/db/indexes.ts` - TTL index (72h) on `processed_events.createdAt`; unique+TTL on `idempotency_keys`
 - ✅ `src/db/mongo.ts` - Collection management
 
-**Logic:**
+**Logic (Dedup):**
 ```
 internal_event_id = sha256(canonical_json(payload) + source_id + day_bucket)
 → Check MongoDB processed_events
 → If exists: return 200 early
 → If not: insert + continue
 → TTL index auto-expires after 72h
+```
+
+**Logic (Idempotency):**
+```
+If X-Idempotency-Key present:
+  - Insert record with status=in_progress (unique on key)
+  - On finish, store response (status, json/text); set expiresAt per TTL
+  - Subsequent calls:
+      - If in_progress → 409
+      - If stored → return same response with Idempotency-Replayed: true
 ```
 
 ---

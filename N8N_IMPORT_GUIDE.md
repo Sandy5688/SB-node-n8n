@@ -169,7 +169,7 @@ curl -X POST http://localhost:3000/webhook/entry \
 
 ```json
 {
-  "status": "processing",
+  "status": "accepted",
   "internal_event_id": "evt_abc123..."
 }
 ```
