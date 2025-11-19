@@ -37,6 +37,14 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { ip: 1 },
     { unique: true, name: 'uniq_ip' }
   );
+  await db.collection('refunds').createIndex(
+    { refund_id: 1 },
+    { unique: true, name: 'uniq_refund_id' }
+  );
+  await db.collection('refunds').createIndex(
+    { status: 1, createdAt: -1 },
+    { name: 'refunds_status_createdAt' }
+  );
 }
 
 

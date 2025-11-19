@@ -13,8 +13,10 @@ import { registerStorageRoutes } from './api/storage';
 import { registerAlertRoutes } from './api/alert';
 import { registerHealthRoutes } from './api/health';
 import { registerMetricsRoutes, httpRequestCounter } from './api/metrics';
+import { registerRefundRoutes } from './api/refunds';
 import { logger } from './lib/logger';
 import { getDb } from './db/mongo';
+import { env } from './config/env';
 
 const app = express();
 
@@ -50,6 +52,7 @@ registerStorageRoutes(app);
 registerAlertRoutes(app);
 registerHealthRoutes(app);
 registerMetricsRoutes(app);
+registerRefundRoutes(app);
 
 // 404 handler
 app.use((_req, res) => res.status(404).json({ error: { message: 'Not Found' } }));
@@ -57,7 +60,7 @@ app.use((_req, res) => res.status(404).json({ error: { message: 'Not Found' } })
 // Error handler
 app.use(errorHandler);
 
-const port = Number(process.env.PORT || 3000);
+const port = env.PORT;
 
 async function start() {
   try {

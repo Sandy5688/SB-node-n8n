@@ -1,0 +1,37 @@
+1. Add src/middleware/verifySignature.ts + tests.
+POST unsigned → 401
+POST with valid HMAC (sha256 hex of raw body) → 200
+2A.migrations/create_processed_events.js
+db.createCollection("processed_events");
+db.processed_events.createIndex({ event_id: 1 }, { unique: true });
+db.processed_events.createIndex({ created_at: 1 }, { expireAfterSeconds: 72 * 3600 }); // TTL 72 hours
+
+2B. Add src/middleware/idempotency.ts + DB migration.
+Send same signed payload twice → second response {ok:true, reason:'duplicate'} and no duplicate downstream actions.
+
+3A. File to add: src/config/env.ts (App fails to start if critical env vars are missing.)
+Add .env.example and src/config/env.ts.
+Action: Replace sandytest42@gmail.com, placeholder phone numbers with env variables and remove them from commit history
+3B .Add src/services/messaging.ts + replace all direct sends.
+
+4. Files to add:
+src/routes/otp.ts
+src/controllers/otpController.ts
+src/services/otp.tsAdd OTP endpoints + src/services/otp.ts.
+Acceptance tests:
+create OTP → send via messaging.sendSMS → verify within TTL → success
+3 failed attempts → block
+
+5.Add payment verification logic in refund controller + admin approval flow.
+src/controllers/payController.ts)
+refund with invalid paymentIntentId → rejected
+refund > limit → status pending_approval, admin alerted
+
+6. Add src/queue + src/workers scaffold.
+src/queue/index.ts
+src/workers/* (separate process handled by PM2)
+
+7. src/middleware/correlationId.ts
+Add Dockerfile + pm2.config.js.
+Add 20+ tests and CI workflow.
+Replace all test credentials and create secrets checklist.
