@@ -1,5 +1,6 @@
-import { Express, Request, Response } from 'express';
+import { Express } from 'express';
 import client from 'prom-client';
+import { getMetricsController } from '../controllers/metricsController';
 
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
@@ -12,10 +13,7 @@ export const httpRequestCounter = new client.Counter({
 register.registerMetric(httpRequestCounter);
 
 export function registerMetricsRoutes(app: Express): void {
-  app.get('/metrics', async (_req: Request, res: Response) => {
-    res.set('Content-Type', register.contentType);
-    res.end(await register.metrics());
-  });
+  app.get('/metrics', getMetricsController);
 }
 
 

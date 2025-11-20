@@ -8,12 +8,63 @@ A hardened backend API that fronts public webhooks, applies security/validation/
 
 ## Quick start
 
-1) Copy `env.example` to `.env` and fill values.
-2) Ensure MongoDB is running and `MONGO_URI` points to it.
-3) Install dependencies and start:
+### Option 1: Docker Compose (Recommended)
+
+The fastest way to get started with full stack (API, Worker, MongoDB, Redis):
+
+```bash
+# 1. Copy environment template
+cp env.example .env
+
+# 2. Edit .env and set required variables (at minimum):
+#    - HMAC_SECRET
+#    - JWT_SECRET  
+#    - N8N_INGEST_URL (optional for testing)
+
+# 3. Start all services
+npm run docker:up
+
+# 4. Run migrations
+npm run migrate:up
+
+# 5. Verify health
+curl http://localhost:3000/health
+
+# View logs
+npm run docker:logs
+
+# Stop services
+npm run docker:down
 ```
+
+Services available:
+- **API**: http://localhost:3000
+- **MongoDB**: localhost:27017
+- **Redis**: localhost:6379
+
+### Option 2: Local Development
+
+For development with hot-reload:
+
+```bash
+# 1. Start dependencies (MongoDB + Redis)
+docker-compose up -d mongo redis
+
+# 2. Install dependencies
 npm install
+
+# 3. Copy and configure environment
+cp env.example .env
+# Edit .env with your values
+
+# 4. Run migrations
+npm run migrate:up
+
+# 5. Start API in dev mode
 npm run dev
+
+# 6. In another terminal, start worker (optional)
+npm run start:worker
 ```
 
 The server starts on `http://localhost:3000`.
@@ -192,9 +243,38 @@ curl -X POST http://localhost:3000/webhook/entry \
 
 ---
 
-## OpenAPI Spec
+## API Documentation
 
-- API is documented in `openapi.yaml`. You can load it in Swagger UI locally or your API gateway.
+### OpenAPI Spec
+- API is documented in `openapi.yaml`
+- Load in Swagger UI or API gateway
+
+### Postman Collection
+- Import `postman_collection.json` into Postman
+- Includes all endpoints with examples
+- Pre-request scripts for HMAC signature generation
+- Environment variables for easy configuration
+
+### Testing the API
+
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Metrics (Prometheus format)
+curl http://localhost:3000/metrics
+
+# Send a signed webhook (requires HMAC_SECRET)
+PAYLOAD='{"source":"test","user_id":"u1","action":"test"}'
+TIMESTAMP=$(date +%s)
+SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "YOUR_HMAC_SECRET" | awk '{print $2}')
+
+curl -X POST http://localhost:3000/webhook/entry \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: sha256=$SIGNATURE" \
+  -H "X-Timestamp: $TIMESTAMP" \
+  -d "$PAYLOAD"
+```
 
 ## Templates
 
@@ -204,9 +284,122 @@ curl -X POST http://localhost:3000/webhook/entry \
 
 ## Queues & Workers
 
-- Queue backend is BullMQ-ready. To enable:
-  - Install `bullmq`, set `REDIS_URL`, and `ENABLE_WORKERS=true`.
-  - Configure `QUEUE_CONCURRENCY` (default 5). Start workers via PM2 (`worker` app) or `dist/workers/index.js`.
+- **Queue backend**: BullMQ with Redis
+- **Workers implemented**: OCR, messaging retry, refund execution, flow orchestration, daily cleanup
+- **Configuration**:
+  - Set `REDIS_URL` (e.g., `redis://localhost:6379`)
+  - Set `ENABLE_WORKERS=true` for worker process
+  - Configure `QUEUE_CONCURRENCY` (default 4)
+
+Start workers:
+```bash
+# With PM2 (recommended for production)
+pm2 start pm2.config.js
+
+# Or directly
+npm run start:worker
+
+# With Docker Compose
+docker-compose up worker
+```
+
+## Migrations
+
+Database migrations are managed with `migrate-mongo`:
+
+```bash
+# Run all pending migrations
+npm run migrate:up
+
+# Rollback last migration
+npm run migrate:down
+
+# Check migration status
+npm run migrate:status
+
+# Create new migration
+npm run migrate:create migration_name
+```
+
+Migrations include:
+- Collection indexes (with TTL for automatic cleanup)
+- JSON schema validators
+- Audit rate-limiting indexes
+
+## Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm test -- --coverage
+
+# Run specific test file
+npm test tests/signature.test.ts
+
+# Run E2E tests (requires services running)
+npm test tests/e2e/
+```
+
+## Production Deployment
+
+### Using Docker Compose
+
+```bash
+# Build images
+npm run docker:build
+
+# Start in production mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f api worker
+
+# Scale API instances
+docker-compose up -d --scale api=3
+```
+
+### Using PM2
+
+```bash
+# Install dependencies
+npm ci --production
+
+# Build TypeScript
+npm run build
+
+# Run migrations
+npm run migrate:up
+
+# Start with PM2
+pm2 start pm2.config.js --env production
+
+# Monitor
+pm2 monit
+
+# View logs
+pm2 logs
+
+# Restart
+pm2 reload pm2.config.js
+```
+
+### Environment Variables
+
+Required for production:
+- `HMAC_SECRET` - Generate: `openssl rand -hex 32`
+- `JWT_SECRET` - Generate: `openssl rand -hex 32`
+- `MONGO_URI` - MongoDB connection string
+- `REDIS_URL` - Redis connection string (for queues)
+- `N8N_INGEST_URL` - Your n8n webhook URL
+- `N8N_TOKEN` - Shared secret for n8n ↔ backend auth
+
+Optional but recommended:
+- Messaging: `TWILIO_*`, `SENDGRID_*`, `SLACK_*`
+- Monitoring: Configure `/metrics` endpoint with Prometheus
+
+See `env.example` for complete list.
 
 ## 🆘 Need Help?
 

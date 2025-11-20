@@ -1,0 +1,72 @@
+### 1) Please fix and complete the repo so we can promote it to production. Implement the following items fully (deliverables, tests, and acceptance criteria required for each). **Do not push partial or stubbed implementations** — everything must be runnable locally. 
+> 1. **Dockerfile + docker-compose.yml** — Production-ready multi-stage Dockerfile and compose for `api` + `worker` + `mongo` (for local testing). Provide `README.md` run commands.
+> 2. **DB migrations system** — Add migrations (recommended tools: Mongock / migrate / migrate-mongo). Include migration scripts that create all required indexes and validators. Provide a `migrate:up` and `migrate:down` script in package.json.
+> 3. **OpenAPI spec** — Full `openapi.yaml` (or JSON) for all public endpoints: `/webhook/entry`, `/otp/*`, `/pay/*`, `/msg/*`, `/flow/*`, `/user/*`, `/auth/*`. Include example request/response for critical flows.
+> 4. **Queue backend (BullMQ)** — Implement queue integration using Redis + BullMQ. Provide `src/queue/processor.ts` + `src/queue/worker.ts`. Ensure config via `REDIS_URL`, `QUEUE_CONCURRENCY`.
+> 5. **Worker engines** — Implement real processors (not stubs) for:
+>    * `ocr` (src/workers/ocrProcessor.ts) — enqueue + placeholder for OCR provider call
+>    * `messaging_retry` (src/workers/messagingRetry.ts) — retry logic using DB+queue
+>    * `refund_execute` (src/workers/refundExecutor.ts) — payment verification + refund call
+>    * `flow_execute` (src/workers/flowExecutor.ts) — orchestrates multi-step flows
+>    * `daily_cleanup` (src/workers/cleanupDaily.ts)
+> 6. **Worker pipeline integration** — end-to-end: route → enqueue job → processor → worker. Provide example flow with logs.
+> 7. **DB abstraction** — add `src/services/db.ts` that wraps MongoClient with pooling, reconnect & health check. Expose a `health()` method used by `/health` endpoint.
+> 8. **Controller separation** — move all route logic into controllers (src/controllers/*). Ensure routes only register controllers. Controllers needed: webhook, otp, pay, msg, flow, user, auth, storage, alerts, refunds, metrics.
+> 9. **Idempotency hardening** — enforce size caps when storing cached responses (e.g., 16KB) and truncate/store pointer if larger; validate `IDEMPOTENCY_TTL_SEC` and default to 3600s if missing.
+> 10. **Audit rate-limiting** — prevent audit log/alert flooding (signature failures, blocked IPs) — add per-IP rate-limit for audit events.
+> 11. **Env validation** — ensure `src/config/env.ts` validates and provides safe defaults for:
+>
+>     * `HMAC_SECRET` (required)
+>     * `SIGNATURE_TOLERANCE_SEC` (default 60)
+>     * `IDEMPOTENCY_TTL_SEC` (default 3600)
+>     * `QUEUE_CONCURRENCY` (default 4)
+> 12. **PM2 config** — add `pm2.config.js` for `api` and `worker` with sane process settings.
+> 13. **Tests & runbook** — unit tests for signature, idempotency, dedup, refund flow; an E2E test script for the webhook->n8n path; and a short runbook describing rollback and disabling webhooks.
+>
+> **Acceptance**: For each item include:
+> * Implementation files added to repo (no stubs)
+> * `README` instructions and env sample
+> * Automated tests pass (`npm test`)
+> * Demo logs from a local run showing a signed webhook → dedupe/idempotency → enqueue → worker → messaging/refund path
+> WE will run the acceptance checklist after PR is ready. Thanks.
+
+
+
+### 2) Acceptance checklist 
+
+**A. Deployment / build**
+* [ ] `Dockerfile` builds and produces a working `api` image (`docker build . -t api`).
+* [ ] `docker-compose.yml` runs `api`, `worker`, `mongo`, `redis` locally.
+
+**B. DB / Migrations**
+* [ ] `npm run migrate:up` creates required indexes in DB.
+* [ ] Migration rollback works (`migrate:down`).
+
+**C. Queue & Workers**
+* [ ] `REDIS_URL` integration works; queue adds job and processor handles it.
+* [ ] Each worker (`ocr`, `messaging_retry`, `refund_execute`, `flow_execute`, `daily_cleanup`) has a working implementation (or clear integration points) and logs actions.
+* [ ] `QUEUE_CONCURRENCY` respected.
+
+**D. Security & Reliability**
+* [ ] HMAC verify accepts `X-Signature` + `X-Timestamp`; rejects replays.
+* [ ] Idempotency returns cached response header `Idempotency-Replayed:true` for replays, denies reuses with different payload.
+* [ ] Stored cached responses capped to 16KB; larger payloads truncated with S3 pointer or marker.
+* [ ] Audit-rate-limiting prevents more than 5 audit events/minute/IP.
+
+**E. API & Controllers**
+* [ ] All controllers implemented, routes only register controllers.
+* [ ] `openapi.yaml` present and matches routes.
+
+**F. Tests**
+* [ ] Unit tests for signature, idempotency, dedup, refund logic.
+* [ ] E2E script demonstrating signed webhook → enqueue → worker processing.
+
+**G. Docs**
+* [ ] `README` with run/health instructions and `env.example`.
+* [ ] Runbook describing disabling webhooks & rollback steps.
+
+
+### 3) Please add; 
+* Health-check endpoints for DB and Redis.
+* CI workflow (GitHub Actions) to run linters and tests on PRs.
+* A minimal Postman collection for manual test runs.

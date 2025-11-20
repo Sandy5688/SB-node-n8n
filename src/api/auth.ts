@@ -1,16 +1,11 @@
-import { Express, Request, Response } from 'express';
+import { Express } from 'express';
 import { internalAuth } from '../middleware/internalAuth';
+import { loginController, logoutController, getMeController } from '../controllers/authController';
 
 export function registerAuthRoutes(app: Express): void {
-  app.post('/auth/login', async (_req: Request, res: Response) => {
-    res.status(501).json({ error: { message: 'Not implemented' } });
-  });
-  app.post('/auth/logout', internalAuth, async (_req: Request, res: Response) => {
-    res.status(501).json({ error: { message: 'Not implemented' } });
-  });
-  app.get('/auth/me', internalAuth, async (_req: Request, res: Response) => {
-    res.status(501).json({ error: { message: 'Not implemented' } });
-  });
+  app.post('/auth/login', loginController);
+  app.post('/auth/logout', internalAuth, logoutController);
+  app.get('/auth/me', internalAuth, getMeController);
 }
 
 

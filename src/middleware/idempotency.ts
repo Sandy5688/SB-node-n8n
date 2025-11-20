@@ -15,6 +15,7 @@ interface IdempotencyRecord {
   responseBodyJson?: unknown;
   responseBodyText?: string;
   responseIsJson?: boolean;
+  responseTruncated?: boolean;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date;
@@ -140,11 +141,39 @@ export function idempotency(): (req: Request, res: Response, next: NextFunction)
           responseStatus,
           responseIsJson: wasJson
         };
+        
+        // Apply 16KB size cap on stored responses
+        const MAX_RESPONSE_SIZE = 16 * 1024; // 16KB
+        
         if (wasJson) {
-          update.responseBodyJson = capturedJson;
+          const jsonString = JSON.stringify(capturedJson);
+          const sizeBytes = Buffer.byteLength(jsonString, 'utf8');
+          
+          if (sizeBytes <= MAX_RESPONSE_SIZE) {
+            update.responseBodyJson = capturedJson;
+          } else {
+            // Response too large - store truncated marker instead
+            update.responseBodyJson = {
+              _truncated: true,
+              _size_bytes: sizeBytes,
+              _message: 'Response exceeds 16KB limit and was not cached',
+            };
+            logger.warn(`Idempotency response too large: key=${key} size=${sizeBytes} bytes`);
+          }
         } else if (capturedText !== undefined) {
-          update.responseBodyText = capturedText;
+          const sizeBytes = Buffer.byteLength(capturedText, 'utf8');
+          
+          if (sizeBytes <= MAX_RESPONSE_SIZE) {
+            update.responseBodyText = capturedText;
+          } else {
+            // Truncate text response
+            const truncated = capturedText.substring(0, MAX_RESPONSE_SIZE - 100) + '... [TRUNCATED]';
+            update.responseBodyText = truncated;
+            update.responseTruncated = true;
+            logger.warn(`Idempotency response truncated: key=${key} original_size=${sizeBytes} bytes`);
+          }
         }
+        
         await db.collection<IdempotencyRecord>('idempotency_keys').updateOne(
           { key },
           { $set: update }
