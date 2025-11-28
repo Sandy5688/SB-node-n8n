@@ -1,0 +1,383 @@
+## 1) **Fix signature middleware: use validated env and strengthen replay key**
+
+**Files to edit**
+
+* `src/middleware/signature.ts`
+
+**Why**
+
+* `signature.ts` reads `process.env.HMAC_SECRET` directly while the app uses zod-validated `env` elsewhere. Use `env.HMAC_SECRET` for runtime validation and clear error handling.
+* Replay guard key currently uses only timestamp + signature. Add a digest of the raw body/request hash to avoid replay collisions and make it impossible to replay different bodies with same signature/timestamp.
+
+**Patch**
+Replace top of file to import `env` and compute replay key with raw body hash. Replace the `secret = process.env.HMAC_SECRET` and the replay-key insert logic with the snippet below.
+
+```ts
+// top imports: add env
+import { env } from '../config/env';
+import crypto from 'crypto';
+
+// ensure you remove direct use of process.env.HMAC_SECRET and use env.HMAC_SECRET instead
+
+export function verifyHmacSignature() {
+  const secret = env.HMAC_SECRET;
+  if (!secret) {
+    throw new Error('HMAC_SECRET is not configured (via src/config/env.ts)');
+  }
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const signatureHeader = (req.header('X-Signature') || '').trim();
+    const timestampHeader = (req.header('X-Timestamp') || '').trim();
+    if (!signatureHeader) {
+      // ... (existing auditLog / response)
+    }
+
+    // raw body
+    const raw = (req as any).rawBody as Buffer | undefined;
+    if (!raw) {
+      // existing error handling...
+    }
+
+    // compute hex signature as before
+    const parts = signatureHeader.split('=');
+    const sigHex = parts.length === 2 ? parts[1] : parts[0];
+
+    // compute replay key including raw body hash
+    const now = Math.floor(Date.now() / 1000);
+    const ts = Number(timestampHeader);
+
+    // ... timestamp validation code remains ...
+
+    const computed = hmacSha256Hex(secret, raw);
+    if (!timingSafeEqualHex(sigHex, computed)) {
+      // existing invalid signature handling...
+    }
+
+    // Replay guard: include raw body hash for uniqueness
+    try {
+      const db = await getDb();
+      const rawHash = crypto.createHash('sha256').update(raw).digest('hex');
+      const key = sha256Hex(`${ts}:${sigHex}:${rawHash}`);
+      const nowDate = new Date();
+      const expiresAt = new Date(nowDate.getTime() + (env.SIGNATURE_TOLERANCE_SEC * 1000));
+      await db.collection('signature_replays').insertOne({
+        key,
+        createdAt: nowDate,
+        expiresAt
+      });
+    } catch (e: any) {
+      // existing duplicate detection and audit handling...
+    }
+
+    next();
+  };
+}
+```
+
+**Notes**
+
+* This keeps our current replay window logic but makes collisions effectively impossible.
+* Removes direct `process.env` usage and uses `env` everywhere. but u must test it from ur side before applying the code changes. 
+
+
+
+## 2) **Propagate enqueue job id/reason — preserve enqueueJob output**
+
+**Files to edit**
+
+* `src/queue/index.ts`
+* (optionally: fix call-sites to use `result.id` — but controllers already try to read `.id` via `result.queued ? result.id : undefined` — still we should return id & reason clearly)
+
+**Why**
+
+* `enqueueJob` (processor) returns `{ ok, id?, reason? }`. `queue/index.ts` currently returns `{ ok: res.ok, queued: true }` and drops `id`/`reason`. Controllers that expect job id or reason lose that info.
+
+**Patch**
+Replace `src/queue/index.ts` implementation to forward the id and reason. Example replacement:
+
+```ts
+import { logger } from '../lib/logger';
+import { env } from '../config/env';
+import { enqueueJob } from './processor';
+
+export type EnqueueResult = { ok: boolean; queued?: boolean; id?: string; reason?: string };
+
+export async function enqueue(jobName: string, data: Record<string, any>): Promise<EnqueueResult> {
+  if (!env.REDIS_URL || !env.ENABLE_WORKERS) {
+    logger.info(`Queue disabled; skipping enqueue for job=${jobName}`);
+    return { ok: true, queued: false, reason: 'queue_disabled' };
+  }
+  try {
+    const res = await enqueueJob(jobName, data);
+    // res: { ok: boolean; id?: string; reason?: string }
+    return { ok: res.ok, queued: res.ok && !!res.id, id: res.id, reason: res.reason };
+  } catch (e: any) {
+    logger.error(`Failed to enqueue job=${jobName}: ${e?.message}`);
+    return { ok: false, queued: false, reason: 'enqueue_failed' };
+  }
+}
+```
+
+**Call-site check**
+
+* Controllers (flowController, refundController, etc.) that already inspect `.id` or `.queued` will now receive `id` and `reason` consistently. No other changes required.
+
+
+
+## 3) **Graceful shutdown in worker entrypoint**
+
+**Files to edit**
+
+* `src/workers/index.ts`
+
+**Why**
+
+* `workers/index.ts` keeps process alive with `setInterval(() => {}, 1 << 30)` but doesn’t close DB or call the centralized `stopWorkers()` for graceful shutdown on SIGTERM/SIGINT. Docker/K8s will SIGTERM — you must clean up Redis/Mongo and worker resources.
+
+**Patch**
+Replace file content (or modify) to:
+
+```ts
+import { env } from '../config/env';
+import { logger } from '../lib/logger';
+import { startWorkers, stopWorkers } from '../queue/worker';
+import { closeDb } from '../db/mongo';
+
+async function start() {
+  if (!env.ENABLE_WORKERS) {
+    logger.info('Workers disabled via ENABLE_WORKERS flag; exiting.');
+    process.exit(0);
+    return;
+  }
+  await startWorkers();
+  logger.info('Workers started and running');
+}
+
+// handle graceful shutdown
+async function shutdown(signal: string) {
+  logger.info(`Received ${signal}; shutting down gracefully...`);
+  try {
+    await stopWorkers();
+  } catch (e:any) {
+    logger.warn(`Error stopping workers: ${e?.message}`);
+  }
+  try {
+    await closeDb();
+  } catch (e:any) {
+    logger.warn(`Error closing DB: ${e?.message}`);
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+
+void start();
+```
+
+**Notes**
+
+* `queue/worker.ts` already had SIG handlers but having them centrally in the worker entrypoint ensures consistent cleanup and works well in containers but must check the code base before applying. 
+
+
+## 4) **Use persistent Redis client in health check (avoid connect/quit per check)**
+
+**Files to edit**
+
+* `src/controllers/healthController.ts`
+
+**Why**
+
+* Repeated connect/quit per health request can cause resource churn and flapping in production. Use a persistent `ioredis` client instance and reuse it (the file already has `redisClient` variable; ensure you `lazyConnect: true` and only `.connect()` when needed and not quit each time — instead `ping()` and handle client state).
+
+**Patch (suggested change)**
+Inside `getRedisClient()`, keep `lazyConnect: true` and **do not** `.quit()` after each check. Replace the health handler Redis section with:
+
+```ts
+// Replace in healthCheckController
+if (env.REDIS_URL) {
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      // ensure connected
+      if (!redis.status || redis.status !== 'ready') {
+        await redis.connect(); // lazy connect
+      }
+      const pong = await redis.ping();
+      out.checks.redis = pong === 'PONG' ? 'ok' : `unexpected: ${pong}`;
+      // do not quit; keep client for future checks
+    } else {
+      out.checks.redis = 'client_init_failed';
+    }
+  } catch (e:any) {
+    out.ok = false;
+    out.checks.redis = `error: ${e?.message || 'unknown'}`;
+    if (redisClient) {
+      try { await redisClient.quit(); } catch {}
+      redisClient = null;
+    }
+  }
+} else {
+  out.checks.redis = 'not_configured';
+}
+```
+
+**Notes**
+
+* This small change reduces resource churn and flapping on frequent polling so pelase apply
+
+---
+
+## 5) **Zod env: set explicit defaults for boolean flags used at startup**
+
+**Files to edit**
+
+* `src/config/env.ts`
+
+**Why**
+
+* The boolean flags (`ENABLE_WORKERS`, `OTP_SEND_ON_GENERATE`, etc.) use `.optional()` transforms and may be `undefined`. Your start logic expects a boolean. Make defaults explicit so the app does not behave unexpectedly in production unless explicitly configured.
+
+**Patch**
+Change the schema flags to include `.default('false')` before transform, e.g.:
+
+```ts
+OTP_SEND_ON_GENERATE: z.enum(['true','false']).default('false').transform(v => v === 'true'),
+ENABLE_WORKERS: z.enum(['true','false']).default('false').transform(v => v === 'true'),
+ENABLE_IDEMPOTENCY_MW: z.enum(['true','false']).default('false').transform(v => v === 'true'),
+ENABLE_REFUNDS: z.enum(['true','false']).default('false').transform(v => v === 'true'),
+```
+
+**Notes**
+
+* This makes behavior explicit and avoids undefined Booleans so must make changes. 
+
+---
+
+## 6) **Normalize date field naming (createdAt / updatedAt)**
+
+**Files to edit**
+
+* `src/controllers/userController.ts`
+* `src/workers/cleanupDaily.ts`
+* `src/workers/messagingRetry.ts`
+* `src/workers/ocrProcessor.ts`
+* `src/workers/refundExecutor.ts`
+* (and tests that assert `created_at` fields, e.g. `tests/e2e/webhook-flow.test.ts`)
+
+**Why**
+
+* Some parts of the code use `created_at` / `updated_at` (snake_case) while indexes / migrations use `createdAt` (camelCase). This leads to inconsistent indexing and TTLs, and misses the migration indexes/TTL rules.
+
+**Patch**
+Standardize on `createdAt` and `updatedAt` camelCase throughout. Replace the fields when inserting/updating documents, e.g.:
+
+**Example change in `createUserController`**
+
+```ts
+const now = new Date();
+const newUser = {
+  user_id,
+  email,
+  phone,
+  name,
+  metadata: metadata || {},
+  status: 'active',
+  createdAt: now,
+  updatedAt: now,
+};
+```
+
+**Example change in workers**
+
+* Change all `ocr_started_at`, `ocr_completed_at`, `started_at`, `completed_at`, `updated_at`, etc. to the camelCase form (`ocrStartedAt`, `ocrCompletedAt`, `startedAt`, `completedAt`, `updatedAt`) **or** keep domain-specific fields but align timestamp names used by indexes/migrations. The migrations already use `createdAt` TTL indexes — focus on aligning `createdAt`/`updatedAt`.
+
+**Notes**
+
+* Do a repo-wide replace for `created_at` => `createdAt`, `updated_at` => `updatedAt`. Tests that depend on these will need adjustments.
+
+---
+
+## 7) **Idempotency: ensure consistent stored response size handling (16KB cap) — OK but add test**
+
+**Files to edit / add tests**
+
+* `tests/idempotency.test.ts` (add)
+* optionally adjust `src/middleware/idempotency.ts` if its a different policy.
+
+**Why**
+
+* Your idempotency middleware caps stored responses at 16KB. Add unit tests to assert behavior when the controller returns >16KB JSON payload so the middleware stores `_truncated` marker. You already have `tests/dedup.test.ts`, but add idempotency edge-case tests.
+
+**Suggested test**
+
+* Add a unit test that mocks express `res.json()` with a large JSON object (>16KB) and assert that the DB stored `responseBodyJson` contains `_truncated: true`.
+
+---
+
+## 8) **Enqueue / Worker concurrency default and error propagation**
+
+**Files to review**
+
+* `src/queue/processor.ts` (already good)
+* `src/queue/worker.ts` (already has concurrency + limiter)
+
+**Please fix**
+
+* Make `defaultJobOptions.attempts` and `backoff` values configurable via env or leave as-is. No immediate patch required unless you want runtime tuning.
+
+---
+
+## 9) **Remove duplicate module blocks (de-duplicate controllers & db modules)**
+
+**Files to check (possible duplicates that showed up in conversation)**
+
+* `src/controllers/userController.ts` — ensure only one canonical copy exists.
+* `src/db/indexes.ts` — ensure single canonical copy.
+* Repo-wide: run `git status` / `rg "export async function getUserController" -n` and remove any accidental duplicate files or duplicate exports.
+
+**Why**
+
+ Double-check the working branch for duplicates to prevent build/lint errors.
+
+**Action**
+
+* If duplicates exist in your branch (same file duplicated under a different path or copy/paste inside same file), keep one canonical canonical file and delete others.
+
+
+
+## 10) **OpenAPI: sync schemas **
+
+**Files**
+
+* `openapi.yaml`
+
+**Why**
+
+* Your OpenAPI is partial and many endpoints are 501. If you publish docs, expand to include request schemas and possible responses. Not required to run, but recommended for public API consumers.
+
+
+
+## 11) **Retest if needed for unit tests **
+
+* `tests/idempotency.test.ts` (large payload truncation)
+* `tests/signatureReplay.test.ts` — test replay rejection when same key used within TTL and allowed when outside TTL (replay guard)
+* `tests/workers/*.test.ts` — basic smoke tests for worker functions (OCR, refundExecutor, messagingRetry, flowExecutor) — mock external providers
+
+**Why**
+
+Use Jest mocks (like  tests/setup.ts` already does for Twilio/SendGrid/Slack).
+
+
+
+## 12) **Production/Docker notes**
+
+**Files**
+
+* `Dockerfile`, `docker-compose.yml`, `pm2.config.js`
+
+**Notes**
+*A separate `Dockerfile.prod`, copy current `Dockerfile` and make environment / user adjustments .
+
+
+
+## 13) ***`src/lib/hmac.ts` has `canonicalStringify`. No change needed; just keep. 

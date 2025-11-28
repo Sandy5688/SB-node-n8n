@@ -30,8 +30,8 @@ export async function processOCR(job: Job<OCRJobData>): Promise<any> {
       {
         $set: {
           ocr_status: 'processing',
-          ocr_started_at: new Date(),
-          updated_at: new Date(),
+          ocrStartedAt: new Date(),
+          updatedAt: new Date(),
         },
       },
       { upsert: true }
@@ -53,8 +53,8 @@ export async function processOCR(job: Job<OCRJobData>): Promise<any> {
         $set: {
           ocr_status: 'completed',
           ocr_result: ocrResult,
-          ocr_completed_at: new Date(),
-          updated_at: new Date(),
+          ocrCompletedAt: new Date(),
+          updatedAt: new Date(),
         },
       }
     );
@@ -78,7 +78,7 @@ export async function processOCR(job: Job<OCRJobData>): Promise<any> {
           $set: {
             ocr_status: 'failed',
             ocr_error: err?.message,
-            updated_at: new Date(),
+            updatedAt: new Date(),
           },
         }
       );

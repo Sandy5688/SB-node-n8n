@@ -46,7 +46,7 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
           $set: {
             status: 'failed',
             error: 'Max retries exceeded',
-            updated_at: new Date(),
+            updatedAt: new Date(),
           },
         }
       );
@@ -61,8 +61,8 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
         $set: {
           status: 'retrying',
           retry_count: retryCount + 1,
-          last_retry_at: new Date(),
-          updated_at: new Date(),
+          lastRetryAt: new Date(),
+          updatedAt: new Date(),
         },
       }
     );
@@ -83,9 +83,9 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
         {
           $set: {
             status: 'delivered',
-            delivered_at: new Date(),
+            deliveredAt: new Date(),
             provider_id: result.provider_id,
-            updated_at: new Date(),
+            updatedAt: new Date(),
           },
         }
       );
@@ -101,8 +101,8 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
         {
           $set: {
             status: 'retry_failed',
-            last_error: result.error,
-            updated_at: new Date(),
+            lastError: result.error,
+            updatedAt: new Date(),
           },
         }
       );

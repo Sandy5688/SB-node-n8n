@@ -73,7 +73,7 @@ export async function processDailyCleanup(job: Job<CleanupDailyJobData>): Promis
     const messageRetentionDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const oldMessagesResult = await db.collection('messages').deleteMany({
       status: 'delivered',
-      delivered_at: { $lt: messageRetentionDate },
+      deliveredAt: { $lt: messageRetentionDate },
     });
     results.old_messages_deleted = oldMessagesResult.deletedCount;
     logger.info(`Cleaned up old messages: ${oldMessagesResult.deletedCount}`);
@@ -81,7 +81,7 @@ export async function processDailyCleanup(job: Job<CleanupDailyJobData>): Promis
     // 7. Clean up old flow executions (older than 60 days)
     const flowRetentionDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
     const oldFlowsResult = await db.collection('flow_executions').deleteMany({
-      completed_at: { $lt: flowRetentionDate },
+      completedAt: { $lt: flowRetentionDate },
       status: 'completed',
     });
     results.old_flows_deleted = oldFlowsResult.deletedCount;
@@ -90,7 +90,7 @@ export async function processDailyCleanup(job: Job<CleanupDailyJobData>): Promis
     // 8. Clean up old refunds (older than 90 days, completed/failed)
     const refundRetentionDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
     const oldRefundsResult = await db.collection('refunds').deleteMany({
-      updated_at: { $lt: refundRetentionDate },
+      updatedAt: { $lt: refundRetentionDate },
       status: { $in: ['completed', 'failed'] },
     });
     results.old_refunds_deleted = oldRefundsResult.deletedCount;

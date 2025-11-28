@@ -2,7 +2,7 @@ import { logger } from '../lib/logger';
 import { env } from '../config/env';
 import { enqueueJob } from './processor';
 
-export type EnqueueResult = { ok: boolean; queued?: boolean; reason?: string };
+export type EnqueueResult = { ok: boolean; queued?: boolean; id?: string; reason?: string };
 
 export async function enqueue(jobName: string, data: Record<string, any>): Promise<EnqueueResult> {
   if (!env.REDIS_URL || !env.ENABLE_WORKERS) {
@@ -11,7 +11,8 @@ export async function enqueue(jobName: string, data: Record<string, any>): Promi
   }
   try {
     const res = await enqueueJob(jobName, data);
-    return { ok: res.ok, queued: true };
+    // Propagate id and reason from processor result
+    return { ok: res.ok, queued: res.ok && !!res.id, id: res.id, reason: res.reason };
   } catch (e: any) {
     logger.error(`Failed to enqueue job=${jobName}: ${e?.message}`);
     return { ok: false, queued: false, reason: 'enqueue_failed' };

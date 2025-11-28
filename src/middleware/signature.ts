@@ -11,9 +11,9 @@ function sha256Hex(input: string): string {
 }
 
 export function verifyHmacSignature() {
-  const secret = process.env.HMAC_SECRET;
+  const secret = env.HMAC_SECRET;
   if (!secret) {
-    throw new Error('HMAC_SECRET is not set');
+    throw new Error('HMAC_SECRET is not configured (via src/config/env.ts)');
   }
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const signatureHeader = (req.header('X-Signature') || '').trim();
@@ -87,12 +87,13 @@ export function verifyHmacSignature() {
       res.status(401).json({ error: { message: 'Invalid signature' } });
       return;
     }
-    // Replay guard within tolerance window
+    // Replay guard within tolerance window - include raw body hash for uniqueness
     try {
       const db = await getDb();
-      const key = sha256Hex(`${ts}:${sigHex}`);
+      const rawHash = crypto.createHash('sha256').update(raw).digest('hex');
+      const key = sha256Hex(`${ts}:${sigHex}:${rawHash}`);
       const nowDate = new Date();
-      const expiresAt = new Date(nowDate.getTime() + tolerance * 1000);
+      const expiresAt = new Date(nowDate.getTime() + (env.SIGNATURE_TOLERANCE_SEC * 1000));
       await db.collection('signature_replays').insertOne({
         key,
         createdAt: nowDate,

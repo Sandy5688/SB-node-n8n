@@ -41,22 +41,25 @@ export async function healthCheckController(_req: Request, res: Response): Promi
     out.checks.db = `error: ${e?.message || 'unknown'}`;
   }
   
-  // Check Redis (if configured)
+  // Check Redis (if configured) - use persistent client
   if (env.REDIS_URL) {
     try {
       const redis = getRedisClient();
       if (redis) {
-        await redis.connect();
+        // Ensure connected (lazyConnect mode)
+        if (!redis.status || redis.status !== 'ready') {
+          await redis.connect();
+        }
         const pong = await redis.ping();
         out.checks.redis = pong === 'PONG' ? 'ok' : `unexpected: ${pong}`;
-        await redis.quit();
-        redisClient = null; // Reset for next health check
+        // Do not quit; keep client for future checks to avoid resource churn
       } else {
         out.checks.redis = 'client_init_failed';
       }
     } catch (e: any) {
       out.ok = false;
       out.checks.redis = `error: ${e?.message || 'unknown'}`;
+      // Only reset client on error
       if (redisClient) {
         try {
           await redisClient.quit();

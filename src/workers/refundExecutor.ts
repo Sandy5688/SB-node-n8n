@@ -40,7 +40,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'rejected',
             rejection_reason: 'amount_exceeds_limit',
-            updated_at: new Date(),
+            updatedAt: new Date(),
           },
         },
         { upsert: true }
@@ -63,7 +63,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'failed',
             error: 'transaction_not_found',
-            updated_at: new Date(),
+            updatedAt: new Date(),
           },
         },
         { upsert: true }
@@ -94,8 +94,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           amount_cents,
           reason,
           metadata,
-          started_at: new Date(),
-          updated_at: new Date(),
+          startedAt: new Date(),
+          updatedAt: new Date(),
         },
       },
       { upsert: true }
@@ -127,8 +127,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           status: 'completed',
           provider_refund_id: providerResult.refund_id,
           provider_status: providerResult.status,
-          completed_at: new Date(),
-          updated_at: new Date(),
+          completedAt: new Date(),
+          updatedAt: new Date(),
         },
       }
     );
@@ -141,8 +141,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           refunded: true,
           refund_id: refund_id,
           refund_amount_cents: amount_cents,
-          refunded_at: new Date(),
-          updated_at: new Date(),
+          refundedAt: new Date(),
+          updatedAt: new Date(),
         },
       }
     );
@@ -179,8 +179,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'failed',
             error: err?.message,
-            failed_at: new Date(),
-            updated_at: new Date(),
+            failedAt: new Date(),
+            updatedAt: new Date(),
           },
         }
       );

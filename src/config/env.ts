@@ -28,21 +28,21 @@ const schema = z.object({
   SLACK_BOT_TOKEN: z.string().optional(),
   SLACK_ALERT_CHANNEL: z.string().optional(),
 
-  OTP_SEND_ON_GENERATE: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+  OTP_SEND_ON_GENERATE: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   REDIS_URL: z.string().optional(),
-  ENABLE_WORKERS: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+  ENABLE_WORKERS: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
   TEMPLATE_DIR: z.string().default('templates'),
 
   // Idempotency (default 3600s = 1 hour as per requirements)
   IDEMPOTENCY_TTL_SEC: z.coerce.number().int().positive().default(3600),
-  ENABLE_IDEMPOTENCY_MW: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+  ENABLE_IDEMPOTENCY_MW: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
 
   // Signature verification (default 60s tolerance as per requirements)
   SIGNATURE_TOLERANCE_SEC: z.coerce.number().int().positive().default(60),
 
   // Refunds
-  ENABLE_REFUNDS: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+  ENABLE_REFUNDS: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   REFUND_LIMIT_CENTS: z.coerce.number().int().positive().default(5000),
 
   // PM2 configuration
