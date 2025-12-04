@@ -79,14 +79,18 @@ export function idempotency(): (req: Request, res: Response, next: NextFunction)
         if (existing) {
           // Defensive: if request hash differs, it's a misuse of the same key
           if (existing.requestHash !== requestHash) {
-            res.status(409).json({ error: { message: 'Idempotency key reuse with different request' } });
+            res.status(409).json({ error: { message: 'Idempotency key reuse with different request', code: 'IDEMPOTENCY_HASH_MISMATCH' } });
             return;
           }
           if (existing.status === 'succeeded' || existing.status === 'failed') {
             res.setHeader('Idempotency-Replayed', 'true');
             const statusCode = existing.responseStatus ?? 200;
             if (existing.responseIsJson && existing.responseBodyJson !== undefined) {
-              res.status(statusCode).json(existing.responseBodyJson as any);
+              // Add _idempotent flag to response
+              const responseWithFlag = typeof existing.responseBodyJson === 'object' && existing.responseBodyJson !== null
+                ? { ...existing.responseBodyJson, _idempotent: true }
+                : existing.responseBodyJson;
+              res.status(statusCode).json(responseWithFlag);
               return;
             }
             if (!existing.responseIsJson && typeof existing.responseBodyText === 'string') {
@@ -94,7 +98,7 @@ export function idempotency(): (req: Request, res: Response, next: NextFunction)
               return;
             }
             // No stored body, return 200 minimal
-            res.status(200).json({ status: 'accepted', idempotent: true });
+            res.status(200).json({ status: 'accepted', _idempotent: true });
             return;
           }
           // Still in progress

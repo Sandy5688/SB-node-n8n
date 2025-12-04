@@ -20,11 +20,10 @@ export async function getUserController(req: Request, res: Response): Promise<vo
       return;
     }
     
-    // Remove sensitive fields
-    delete user._id;
-    delete user.password_hash;
+    // Remove sensitive fields using destructuring
+    const { _id, password_hash, ...safeUser } = user;
     
-    res.json({ user });
+    res.json({ user: safeUser });
   } catch (err: any) {
     logger.error(`Get user failed: ${err?.message}`);
     res.status(500).json({ error: { message: 'Internal server error' } });
@@ -71,9 +70,7 @@ export async function createUserController(req: Request, res: Response): Promise
     
     await db.collection('users').insertOne(newUser);
     
-    // Remove internal fields
-    delete (newUser as any)._id;
-    
+    // Return user without _id (MongoDB adds _id on insert)
     res.status(201).json({ user: newUser });
   } catch (err: any) {
     logger.error(`Create user failed: ${err?.message}`);
@@ -111,10 +108,14 @@ export async function updateUserController(req: Request, res: Response): Promise
     }
     
     const updatedUser = await db.collection('users').findOne({ user_id: id });
-    delete (updatedUser as any)._id;
-    delete (updatedUser as any).password_hash;
     
-    res.json({ user: updatedUser });
+    if (updatedUser) {
+      // Remove sensitive fields using destructuring
+      const { _id, password_hash, ...safeUser } = updatedUser;
+      res.json({ user: safeUser });
+    } else {
+      res.json({ user: null });
+    }
   } catch (err: any) {
     logger.error(`Update user failed: ${err?.message}`);
     res.status(500).json({ error: { message: 'Internal server error' } });

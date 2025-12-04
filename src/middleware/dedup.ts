@@ -21,9 +21,13 @@ export async function deduplicate(req: Request, res: Response, next: NextFunctio
   (req as any).internal_event_id = internalEventId;
 
   try {
+    const now = new Date();
+    // TTL: 72 hours for dedup records
+    const expiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
     await db.collection('processed_events').insertOne({
       internal_event_id: internalEventId,
-      createdAt: new Date()
+      createdAt: now,
+      expiresAt
     });
     next();
   } catch (e: any) {

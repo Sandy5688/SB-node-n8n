@@ -1,4 +1,4 @@
-import { Worker, Job, ConnectionOptions } from 'bullmq';
+import { Worker, Job, Queue, ConnectionOptions } from 'bullmq';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { processOCR } from '../workers/ocrProcessor';
@@ -8,6 +8,22 @@ import { processFlowExecute } from '../workers/flowExecutor';
 import { processDailyCleanup } from '../workers/cleanupDaily';
 
 const workers: Worker[] = [];
+const dlqQueues: Map<string, Queue> = new Map();
+
+// Worker health tracking
+interface WorkerHealthStatus {
+  status: 'running' | 'stopped' | 'error';
+  lastJobAt?: Date;
+  jobsProcessed: number;
+  jobsFailed: number;
+  startedAt: Date;
+}
+
+const workerHealth: Map<string, WorkerHealthStatus> = new Map();
+
+export function getWorkerHealth(): Record<string, WorkerHealthStatus> {
+  return Object.fromEntries(workerHealth);
+}
 
 function getConnectionOptions(): ConnectionOptions {
   if (!env.REDIS_URL) {
@@ -42,11 +58,27 @@ export async function startWorkers(): Promise<void> {
 
   const connection = getConnectionOptions();
   const concurrency = env.QUEUE_CONCURRENCY;
+  
+  // Log effective concurrency
+  logger.info(`Queue concurrency configured: ${concurrency} (min: 1, max: 50)`);
 
   const queues: QueueName[] = ['ocr', 'messaging_retry', 'refund_execute', 'flow_execute', 'daily_cleanup'];
 
   for (const queueName of queues) {
     const processor = processors[queueName];
+    
+    // Initialize DLQ for this worker
+    const dlqName = `${queueName}_dlq`;
+    const dlqQueue = new Queue(dlqName, { connection });
+    dlqQueues.set(queueName, dlqQueue);
+    
+    // Initialize health status
+    workerHealth.set(queueName, {
+      status: 'running',
+      jobsProcessed: 0,
+      jobsFailed: 0,
+      startedAt: new Date()
+    });
     
     const worker = new Worker(queueName, processor, {
       connection,
@@ -60,14 +92,55 @@ export async function startWorkers(): Promise<void> {
 
     worker.on('completed', (job: Job) => {
       logger.info(`Job completed: queue=${queueName} id=${job.id} duration=${Date.now() - job.processedOn!}ms`);
+      
+      // Update health status
+      const health = workerHealth.get(queueName);
+      if (health) {
+        health.lastJobAt = new Date();
+        health.jobsProcessed++;
+      }
     });
 
-    worker.on('failed', (job: Job | undefined, err: Error) => {
+    worker.on('failed', async (job: Job | undefined, err: Error) => {
       logger.error(`Job failed: queue=${queueName} id=${job?.id} error=${err.message} attempts=${job?.attemptsMade}`);
+      
+      // Update health status
+      const health = workerHealth.get(queueName);
+      if (health) {
+        health.lastJobAt = new Date();
+        health.jobsFailed++;
+      }
+      
+      // Push to Dead Letter Queue after max retries (default 3)
+      const maxAttempts = job?.opts?.attempts || 3;
+      if (job && job.attemptsMade >= maxAttempts) {
+        const dlq = dlqQueues.get(queueName);
+        if (dlq) {
+          try {
+            await dlq.add(`failed_${job.id}`, {
+              originalJobId: job.id,
+              originalData: job.data,
+              error: err.message,
+              stack: err.stack,
+              attemptsMade: job.attemptsMade,
+              failedAt: new Date().toISOString(),
+            });
+            logger.warn(`Job moved to DLQ: queue=${queueName}_dlq job=${job.id}`);
+          } catch (dlqErr: any) {
+            logger.error(`Failed to push to DLQ: ${dlqErr?.message}`);
+          }
+        }
+      }
     });
 
     worker.on('error', (err: Error) => {
       logger.error(`Worker error: queue=${queueName} error=${err.message}`);
+      
+      // Update health status
+      const health = workerHealth.get(queueName);
+      if (health) {
+        health.status = 'error';
+      }
     });
 
     workers.push(worker);
@@ -80,6 +153,15 @@ export async function startWorkers(): Promise<void> {
 export async function stopWorkers(): Promise<void> {
   logger.info('Stopping workers...');
   
+  // Update health status
+  for (const [name] of workerHealth) {
+    const health = workerHealth.get(name);
+    if (health) {
+      health.status = 'stopped';
+    }
+  }
+  
+  // Close workers gracefully
   for (const worker of workers) {
     try {
       await worker.close();
@@ -88,7 +170,18 @@ export async function stopWorkers(): Promise<void> {
     }
   }
   
+  // Close DLQ connections
+  for (const [name, dlq] of dlqQueues) {
+    try {
+      await dlq.close();
+    } catch (err: any) {
+      logger.warn(`Failed to close DLQ ${name}: ${err?.message}`);
+    }
+  }
+  
   workers.length = 0;
+  dlqQueues.clear();
+  workerHealth.clear();
   logger.info('All workers stopped');
 }
 

@@ -12,7 +12,8 @@ import { handleWebhookEntry } from '../controllers/webhookController';
 export function registerWebhookRoutes(app: Express): void {
   app.post(
     '/webhook/entry',
-    bodyParser.raw({ type: '*/*' }),
+    // Limit raw body size to 1MB for security
+    bodyParser.raw({ type: '*/*', limit: '1mb' }),
     (req: Request, _res: Response, next) => {
       // Expose raw body for HMAC
       (req as any).rawBody = req.body as Buffer;

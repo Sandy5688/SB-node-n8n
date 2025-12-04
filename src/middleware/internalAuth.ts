@@ -30,6 +30,11 @@ function isIpAllowed(ip: string | undefined | null): boolean {
   return false;
 }
 
+interface JwtPayload {
+  iss?: string;
+  [key: string]: any;
+}
+
 function isTokenValid(authHeader: string | undefined | null): boolean {
   if (!authHeader) return false;
   const m = /^Bearer\s+(.+)$/.exec(authHeader);
@@ -40,7 +45,9 @@ function isTokenValid(authHeader: string | undefined | null): boolean {
   const secret = process.env.JWT_SECRET;
   if (!secret) return false;
   try {
-    jwt.verify(token, secret);
+    const decoded = jwt.verify(token, secret) as JwtPayload;
+    // Verify JWT issuer claim
+    if (decoded.iss !== 'internal-backend') return false;
     return true;
   } catch {
     return false;

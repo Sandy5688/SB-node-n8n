@@ -10,6 +10,14 @@ function sha256Hex(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
+/**
+ * Normalize IPv6-mapped IPv4 addresses to plain IPv4
+ */
+function normalizeIp(ip: string | undefined): string {
+  if (!ip) return '';
+  return ip.replace(/^::ffff:/, '');
+}
+
 export function verifyHmacSignature() {
   const secret = env.HMAC_SECRET;
   if (!secret) {
@@ -18,13 +26,16 @@ export function verifyHmacSignature() {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const signatureHeader = (req.header('X-Signature') || '').trim();
     const timestampHeader = (req.header('X-Timestamp') || '').trim();
+    // Normalize IP for consistent logging
+    const clientIp = normalizeIp(req.ip);
+    
     if (!signatureHeader) {
       logger.warn('signature_failure: missing_signature');
       void auditLog({
         action: 'signature_failure',
         path: req.path,
         correlationId: (req as any).correlationId,
-        ip: req.ip,
+        ip: clientIp,
         details: { reason: 'missing_signature' }
       });
       res.status(401).json({ error: { message: 'Missing signature' } });
@@ -40,7 +51,7 @@ export function verifyHmacSignature() {
         action: 'signature_failure',
         path: req.path,
         correlationId: (req as any).correlationId,
-        ip: req.ip,
+        ip: clientIp,
         details: { reason: 'missing_raw_body' }
       });
       res.status(400).json({ error: { message: 'Missing raw body for signature verification' } });
@@ -55,33 +66,50 @@ export function verifyHmacSignature() {
         action: 'signature_failure',
         path: req.path,
         correlationId: (req as any).correlationId,
-        ip: req.ip,
+        ip: clientIp,
         details: { reason: 'missing_or_invalid_timestamp' }
       });
       res.status(401).json({ error: { message: 'Missing or invalid timestamp' } });
       return;
     }
     const tolerance = env.SIGNATURE_TOLERANCE_SEC;
+    
+    // Reject timestamps more than 5 seconds in the future (clock skew protection)
+    if (ts > now + 5) {
+      logger.warn('signature_failure: timestamp_in_future');
+      void auditLog({
+        action: 'signature_failure',
+        path: req.path,
+        correlationId: (req as any).correlationId,
+        ip: clientIp,
+        details: { reason: 'timestamp_in_future', ts, now }
+      });
+      res.status(401).json({ error: { message: 'Timestamp too far in the future' } });
+      return;
+    }
+    
     if (Math.abs(now - ts) > tolerance) {
       logger.warn('signature_failure: timestamp_out_of_window');
       void auditLog({
         action: 'signature_failure',
         path: req.path,
         correlationId: (req as any).correlationId,
-        ip: req.ip,
+        ip: clientIp,
         details: { reason: 'timestamp_out_of_window', ts, now, tolerance }
       });
       res.status(401).json({ error: { message: 'Signature timestamp out of allowed window' } });
       return;
     }
-    const computed = hmacSha256Hex(secret, raw);
+    // Bind signature to endpoint path for additional security
+    const pathAndBody = Buffer.concat([Buffer.from(req.path + '\n'), raw]);
+    const computed = hmacSha256Hex(secret, pathAndBody);
     if (!timingSafeEqualHex(sigHex, computed)) {
       logger.warn('signature_failure: invalid_signature');
       void auditLog({
         action: 'signature_failure',
         path: req.path,
         correlationId: (req as any).correlationId,
-        ip: req.ip,
+        ip: clientIp,
         details: { reason: 'invalid_signature' }
       });
       res.status(401).json({ error: { message: 'Invalid signature' } });
@@ -106,7 +134,7 @@ export function verifyHmacSignature() {
           action: 'signature_failure',
           path: req.path,
           correlationId: (req as any).correlationId,
-          ip: req.ip,
+          ip: clientIp,
           details: { reason: 'replay_detected' }
         });
         res.status(401).json({ error: { message: 'Replay detected' } });

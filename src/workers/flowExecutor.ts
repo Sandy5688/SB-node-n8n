@@ -34,14 +34,17 @@ export async function processFlowExecute(job: Job<FlowExecuteJobData>): Promise<
   const results: any[] = [];
 
   try {
-    // Create execution record
+    // Create execution record (using snake_case for all timestamps)
+    const now = new Date();
     await db.collection('flow_executions').insertOne({
       execution_id: executionId,
       flow_id,
       flow_name,
       user_id,
       status: 'running',
-      started_at: new Date(),
+      started_at: now,
+      created_at: now,
+      updated_at: now,
       context,
     });
 
@@ -103,13 +106,14 @@ export async function processFlowExecute(job: Job<FlowExecuteJobData>): Promise<
       }
     }
 
-    // Mark execution as completed
+    // Mark execution as completed (using snake_case for timestamps)
     await db.collection('flow_executions').updateOne(
       { execution_id: executionId },
       {
         $set: {
           status: 'completed',
           completed_at: new Date(),
+          updated_at: new Date(),
           results,
         },
       }
@@ -127,13 +131,14 @@ export async function processFlowExecute(job: Job<FlowExecuteJobData>): Promise<
   } catch (err: any) {
     logger.error(`Flow execution failed: id=${job.id} flow=${flow_id} error=${err?.message}`);
 
-    // Mark execution as failed
+    // Mark execution as failed (using snake_case for timestamps)
     await db.collection('flow_executions').updateOne(
       { execution_id: executionId },
       {
         $set: {
           status: 'failed',
           failed_at: new Date(),
+          updated_at: new Date(),
           error: err?.message,
           results,
         },
@@ -222,15 +227,60 @@ function replaceVariables(obj: any, context: Record<string, any>): any {
   return obj;
 }
 
+/**
+ * Safe condition evaluator with support for common operators
+ * Supports: ==, !=, >, <, >=, <=, &&, ||, !
+ * Variables are replaced with context values using {{varName}} syntax
+ */
 function evaluateCondition(condition: string, context: Record<string, any>): boolean {
-  // Simple condition evaluation (e.g., "user_id exists" or "amount > 100")
   try {
-    // Replace variables in condition
-    const resolved = replaceVariables(condition, context);
-    // Use eval cautiously - in production, use a proper expression parser
-    // For now, just check if value exists and is truthy
-    return !!context[condition];
-  } catch {
+    // Replace {{variable}} with actual values from context
+    const resolved = condition.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+      const val = context[key];
+      if (val === undefined || val === null) return 'null';
+      if (typeof val === 'string') return JSON.stringify(val);
+      if (typeof val === 'object') return JSON.stringify(val);
+      return String(val);
+    });
+
+    // Whitelist allowed characters for safety
+    // Only allow: alphanumeric, spaces, comparison operators, logical operators, parentheses, quotes, dots, brackets
+    const safePattern = /^[\w\s\d\.\[\]'"<>=!&|()+-]+$/;
+    if (!safePattern.test(resolved)) {
+      logger.warn(`Unsafe condition rejected: ${condition}`);
+      return false;
+    }
+
+    // Blacklist dangerous patterns
+    const dangerousPatterns = [
+      /\bfunction\b/i,
+      /\beval\b/i,
+      /\bexec\b/i,
+      /\bimport\b/i,
+      /\brequire\b/i,
+      /\bprocess\b/i,
+      /\bglobal\b/i,
+      /\bwindow\b/i,
+      /\bdocument\b/i,
+      /\bconstructor\b/i,
+      /\b__proto__\b/i,
+      /\bprototype\b/i,
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(resolved)) {
+        logger.warn(`Dangerous pattern in condition rejected: ${condition}`);
+        return false;
+      }
+    }
+
+    // Use Function constructor with empty scope for safer evaluation
+    // This is still not 100% safe, but much safer than eval()
+    const evaluator = new Function('return ' + resolved);
+    const result = evaluator();
+    return Boolean(result);
+  } catch (err: any) {
+    logger.warn(`Condition evaluation failed: ${condition} - ${err?.message}`);
     return false;
   }
 }

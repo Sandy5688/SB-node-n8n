@@ -9,8 +9,20 @@ const envBlocked = new Set(
     .filter(Boolean)
 );
 
+/**
+ * Normalize IPv6-mapped IPv4 addresses to plain IPv4
+ * Example: '::ffff:127.0.0.1' -> '127.0.0.1'
+ */
+function normalizeIp(ip: string): string {
+  // Remove IPv6 prefix for IPv4-mapped addresses
+  return ip.replace(/^::ffff:/, '');
+}
+
 export async function blockList(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const ip = req.ip || req.connection.remoteAddress || '';
+  const rawIp = req.ip || req.connection.remoteAddress || '';
+  // Normalize IPv6 -> IPv4 for consistent matching
+  const ip = normalizeIp(rawIp);
+  
   if (envBlocked.has(ip)) {
     void auditLog({
       action: 'blocked_ip',

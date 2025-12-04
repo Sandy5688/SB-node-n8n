@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 
 export async function ensureIndexes(db: Db): Promise<void> {
+  // processed_events indexes
   await db.collection('processed_events').createIndex(
     { internal_event_id: 1 },
     { unique: true, name: 'uniq_internal_event_id' }
@@ -8,6 +9,10 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await db.collection('processed_events').createIndex(
     { createdAt: 1 },
     { expireAfterSeconds: 72 * 60 * 60, name: 'ttl_processed_events_72h' }
+  );
+  await db.collection('processed_events').createIndex(
+    { expiresAt: 1 },
+    { expireAfterSeconds: 0, name: 'ttl_processed_events_expiresAt', sparse: true }
   );
 
   // Idempotency storage
@@ -64,6 +69,44 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await db.collection('signature_replays').createIndex(
     { expiresAt: 1 },
     { expireAfterSeconds: 0, name: 'ttl_signature_replays' }
+  );
+
+  // Audit rate limits indexes
+  await db.collection('audit_rate_limits').createIndex(
+    { ip: 1, event_type: 1, window_start: 1 },
+    { name: 'audit_rate_limit_lookup' }
+  );
+  await db.collection('audit_rate_limits').createIndex(
+    { expiresAt: 1 },
+    { expireAfterSeconds: 0, name: 'ttl_audit_rate_limits' }
+  );
+
+  // Flow executions indexes
+  await db.collection('flow_executions').createIndex(
+    { flow_id: 1 },
+    { name: 'idx_flow_id' }
+  );
+  await db.collection('flow_executions').createIndex(
+    { execution_id: 1 },
+    { unique: true, name: 'uniq_execution_id' }
+  );
+  await db.collection('flow_executions').createIndex(
+    { status: 1, started_at: -1 },
+    { name: 'idx_flow_status_started' }
+  );
+
+  // Users indexes (unique sparse for optional email/phone)
+  await db.collection('users').createIndex(
+    { user_id: 1 },
+    { unique: true, name: 'uniq_user_id' }
+  );
+  await db.collection('users').createIndex(
+    { email: 1 },
+    { unique: true, sparse: true, name: 'uniq_email' }
+  );
+  await db.collection('users').createIndex(
+    { phone: 1 },
+    { unique: true, sparse: true, name: 'uniq_phone' }
   );
 
   // Basic schema validation (best-effort; ignore failures if permissions are limited)

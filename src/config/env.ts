@@ -6,8 +6,9 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('info'),
 
-  HMAC_SECRET: z.string().min(1, 'HMAC_SECRET is required'),
-  JWT_SECRET: z.string().optional(),
+  // Security: Enforce minimum secret lengths (32 chars minimum)
+  HMAC_SECRET: z.string().min(32, 'HMAC_SECRET must be at least 32 characters'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').optional(),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().optional(),
   INTERNAL_ALLOWLIST: z.string().optional(),
   BLOCKED_IPS_CSV: z.string().optional(),
@@ -15,7 +16,7 @@ const schema = z.object({
   MONGO_URI: z.string().min(1, 'MONGO_URI is required'),
 
   N8N_INGEST_URL: z.string().url().optional(),
-  N8N_TOKEN: z.string().optional(),
+  N8N_TOKEN: z.string().min(32, 'N8N_TOKEN must be at least 32 characters').optional(),
 
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
@@ -31,7 +32,8 @@ const schema = z.object({
   OTP_SEND_ON_GENERATE: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   REDIS_URL: z.string().optional(),
   ENABLE_WORKERS: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
-  QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(5),
+  // Queue concurrency: min 1, max 50
+  QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
   TEMPLATE_DIR: z.string().default('templates'),
 
   // Idempotency (default 3600s = 1 hour as per requirements)
@@ -46,7 +48,10 @@ const schema = z.object({
   REFUND_LIMIT_CENTS: z.coerce.number().int().positive().default(5000),
 
   // PM2 configuration
-  PM2_INSTANCES: z.coerce.number().int().positive().optional()
+  PM2_INSTANCES: z.coerce.number().int().positive().optional(),
+
+  // CORS configuration
+  CORS_ALLOWED_ORIGINS: z.string().optional()
 });
 
 const parsed = schema.safeParse(process.env);

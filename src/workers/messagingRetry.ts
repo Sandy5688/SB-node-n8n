@@ -1,7 +1,8 @@
 import { Job } from 'bullmq';
 import { logger } from '../lib/logger';
 import { getDb } from '../db/mongo';
-import { sendMessage } from '../services/messaging';
+import { sendMessageWithFallback } from '../services/messaging';
+import { getJitterDelay } from '../lib/http';
 
 interface MessagingRetryJobData {
   message_id: string;
@@ -67,8 +68,12 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
       }
     );
 
+    // Add jitter delay before retry to prevent thundering herd
+    const jitterMs = getJitterDelay(100); // 50-150ms jitter
+    await new Promise(resolve => setTimeout(resolve, jitterMs));
+    
     // Retry sending the message
-    const result = await sendMessage({
+    const result = await sendMessageWithFallback({
       channel: message.channel,
       to: message.to,
       template_id: message.template_id,
@@ -84,30 +89,29 @@ export async function processMessagingRetry(job: Job<MessagingRetryJobData>): Pr
           $set: {
             status: 'delivered',
             deliveredAt: new Date(),
-            provider_id: result.provider_id,
+            channel_used: result.channel_used,
             updatedAt: new Date(),
           },
         }
       );
 
-      logger.info(`Message retry successful: message_id=${message_id} attempt=${retryCount + 1}`);
-      return { ok: true, message_id, provider_id: result.provider_id };
+      logger.info(`Message retry successful: message_id=${message_id} attempt=${retryCount + 1} channel=${result.channel_used}`);
+      return { ok: true, message_id, channel_used: result.channel_used };
     } else {
       // Retry failed, will be retried again if under limit
-      logger.warn(`Message retry failed: message_id=${message_id} attempt=${retryCount + 1} error=${result.error}`);
+      logger.warn(`Message retry failed: message_id=${message_id} attempt=${retryCount + 1}`);
       
       await db.collection('messages').updateOne(
         { message_id },
         {
           $set: {
             status: 'retry_failed',
-            lastError: result.error,
             updatedAt: new Date(),
           },
         }
       );
 
-      throw new Error(result.error || 'Message delivery failed');
+      throw new Error('Message delivery failed');
     }
   } catch (err: any) {
     logger.error(`Messaging retry job failed: id=${job.id} message=${message_id} error=${err?.message}`);

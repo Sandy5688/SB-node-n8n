@@ -36,8 +36,9 @@ module.exports = {
       kill_timeout: 5000,
       wait_ready: true,
       
-      // Graceful shutdown
+      // Graceful shutdown timeout (30 seconds)
       shutdown_with_message: true,
+      graceful_shutdown_timeout: 30000,
     },
     {
       name: 'worker',
@@ -72,10 +73,49 @@ module.exports = {
       
       // Process monitoring
       kill_timeout: 30000, // Allow time for jobs to complete
-      wait_ready: false,
+      wait_ready: true,
+      
+      // Graceful shutdown timeout (60 seconds for workers to finish jobs)
+      graceful_shutdown_timeout: 60000,
       
       // Cron restart (daily at 3 AM)
       cron_restart: '0 3 * * *',
+    },
+    {
+      name: 'scheduler',
+      script: 'dist/queue/index.js',
+      instances: 1,
+      exec_mode: 'fork',
+      
+      // Auto-restart configuration
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+      restart_delay: 4000,
+      
+      // Memory management
+      max_memory_restart: '256M',
+      
+      // Logging
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file: './logs/scheduler-error.log',
+      out_file: './logs/scheduler-out.log',
+      merge_logs: true,
+      
+      // Environment
+      env: {
+        NODE_ENV: 'development',
+      },
+      env_production: {
+        NODE_ENV: 'production',
+      },
+      
+      // Process monitoring
+      kill_timeout: 10000,
+      wait_ready: false,
+      
+      // Graceful shutdown
+      graceful_shutdown_timeout: 15000,
     }
   ],
   

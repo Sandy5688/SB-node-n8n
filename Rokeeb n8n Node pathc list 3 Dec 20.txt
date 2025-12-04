@@ -1,0 +1,325 @@
+Rokeeb n8n Node pathc list 3 Dec 2025
+
+# **1. Docker & Runtime**
+
+### **1.1 Add Production Dockerfile**
+
+* Create `Dockerfile.prod` (multi-stage build, Alpine base).
+* Install dependencies in builder stage.
+* Copy build output into minimal runtime stage.
+* Run as **non-root** user.
+* Include **HEALTHCHECK**.
+* Copy templates, migrations, env.
+
+### **1.2 PM2 Config**
+
+* Add full `ecosystem.config.js`:
+
+  * Separate processes: `api`, `worker`, `scheduler`.
+  * Use `env.PM2_INSTANCES` for scaling.
+  * Add **gracefulShutdownTimeout**.
+  * Set max memory restart.
+  * Add `wait_ready: true` and ensure server sends `process.send("ready")`.
+
+---
+
+# **2. Database / Migrations**
+
+### **2.1 Add Migration Framework**
+
+* Create `/migrations` folder.
+* Add version tracking collection: `schema_versions`.
+* Add startup migration runner.
+
+### **2.2 Add Required Indexes**
+
+Implement these:
+
+```
+processed_events.internal_event_id (unique)
+signature_replays.key (unique, TTL)
+audit_rate_limits.ip + event_type (TTL)
+idempotency_keys.key (unique, TTL)
+refunds.refund_id (unique)
+flow_executions.flow_id (unique)
+users.email (unique sparse)
+users.phone (unique sparse)
+blocked_ips.ip
+```
+
+---
+
+# **3. Workers & Queue Engine**
+
+### **3.1 Add Dead Letter Queues**
+
+* For each worker (flow, refund, messagingRetry, cleanup):
+
+  * Add `worker.on("failed")` handler.
+  * Push repeated failures to `*_dlq`.
+
+### **3.2 Standardize Worker Lifecycle**
+
+* Add shared SIGTERM handler.
+* Remove heartbeat intervals.
+* Add worker health flags.
+
+### **3.3 Concurrency Enforcement**
+
+* Validate `env.QUEUE_CONCURRENCY`:
+
+  * Enforce min/max (e.g., 1–50).
+  * Log effective concurrency.
+
+---
+
+# **4. Messaging / OTP / Retry**
+
+### **4.1 Add Retry Jitter**
+
+* Add **random 50–150ms jitter** to all retry logic.
+
+### **4.2 Add Correlation ID Propagation**
+
+* Ensure outbound messaging requests include:
+
+  * `X-Correlation-Id`.
+
+---
+
+# **5. N8N Integration**
+
+### **5.1 Add Outbound Signature Headers**
+
+Add to all N8N-bound requests:
+
+```
+X-Backend-Signature
+X-Backend-Timestamp
+```
+
+### **5.2 Add Retry Policy**
+
+* Retry N8N calls:
+
+  * 3 attempts
+  * exponential backoff + jitter
+
+---
+
+# **6. Signature Verification (Inbound)**
+
+### **6.1 Add Future Timestamp Rejection**
+
+* Reject requests with timestamp > now + 5s.
+
+### **6.2 Bind Signature to Endpoint**
+
+* Include `req.path` in signature hash comparison.
+
+### **6.3 Add Raw Body Size Limit**
+
+In `/webhook/entry`:
+
+```
+bodyParser.raw({ type: '*/*', limit: '1mb' })
+```
+
+---
+
+# **7. Idempotency System**
+
+### **7.1 Enforce Capped Collection**
+
+* Convert `idempotency_keys` to capped collection (2GB).
+* Add TTL enforcement on insert.
+
+### **7.2 Add Hash Mismatch Error**
+
+If key reused with different payload:
+
+* Return `IDEMPOTENCY_HASH_MISMATCH`.
+
+### **7.3 Add Replay Flag**
+
+On replay, response must include:
+
+```
+_idempotent: true
+```
+
+---
+
+# **8. Deduplication System**
+
+### **8.1 Add Circular Reference Protection**
+
+* Wrap canonical stringify in try/catch.
+
+### **8.2 Enforce TTL in Insert**
+
+* Ensure each inserted dedup record includes `expiresAt`.
+
+---
+
+# **9. InternalAuth / Blocklist**
+
+### **9.1 Normalize IPv6 → IPv4**
+
+* Normalize all incoming IPs (remove `::ffff:`).
+
+### **9.2 Add JWT “issuer” Check**
+
+Reject if `decoded.iss !== "internal-backend"`.
+
+### **9.3 Trust Proxy**
+
+Add:
+
+```
+app.set("trust proxy", 1)
+```
+
+---
+
+# **10. HTTP Client Layer**
+
+### **10.1 Fix validateStatus**
+
+Replace:
+
+```
+>=200 && <500
+```
+
+with:
+
+```
+>=200 && <300
+```
+
+### **10.2 Add Correlation Header**
+
+Add:
+
+```
+X-Correlation-Id
+```
+
+to all outbound http requests.
+
+---
+
+# **11. Audit System**
+
+### **11.1 Add TTL Index**
+
+* Add TTL for `audit_rate_limits.expiresAt`.
+
+### **11.2 Add PII Masking**
+
+Mask:
+
+* emails
+* phone numbers
+* tokens
+  in logs & audit.
+
+---
+
+# **12. Health System**
+
+### **12.1 Add Worker Status to /health**
+
+* Add `?deep=true` mode.
+
+### **12.2 Add Redis Persistence Info**
+
+Return Redis memory/persistence stats.
+
+---
+
+# **13. Input Validation**
+
+### **13.1 Add Versioned Payload Schemas**
+
+* Add shared validation:
+
+  * request schemas
+  * response schemas
+  * `payload_version`
+
+---
+
+# **14. Security Headers**
+
+### **14.1 Add Helmet**
+
+Enable:
+
+* noSniff
+* frameguard
+* hidePoweredBy
+
+### **14.2 Restrict CORS**
+
+* Only allow approved origins.
+
+---
+
+# **15. Cleanup Jobs**
+
+### **15.1 Add TTL Cleanups**
+
+Explicitly delete expired items from:
+
+```
+processed_events
+signature_replays
+idempotency_keys
+audit_rate_limits
+flow_executions
+```
+
+---
+
+# **16. Secret Enforcement**
+
+### **16.1 Add Minimum Secret Length Validation**
+
+Enforce:
+
+```
+HMAC_SECRET >= 32 chars
+JWT_SECRET >= 32 chars
+N8N_TOKEN >= 32 chars
+```
+
+---
+
+# **17. Flow & Refund Workers (Special Fixes)**
+
+### **17.1 Standardize Timestamp Field Names**
+
+Replace ALL camelCase timestamps with:
+
+```
+started_at
+updated_at
+completed_at
+failed_at
+```
+
+### **17.2 Fix Condition Evaluator in flowExecutor**
+
+Replace broken logic with safe expression evaluator.
+
+### **17.3 Fix cleanupDaily**
+
+Use:
+
+```
+completed_at
+```
+
+instead of `completedAt`.

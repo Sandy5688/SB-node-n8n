@@ -90,11 +90,10 @@ export async function getMeController(req: Request, res: Response): Promise<void
       return;
     }
     
-    // Remove sensitive fields
-    delete user._id;
-    delete user.password_hash;
+    // Remove sensitive fields using destructuring
+    const { _id, password_hash, ...safeUser } = user;
     
-    res.json({ user });
+    res.json({ user: safeUser });
   } catch (err: any) {
     logger.error(`Get me failed: ${err?.message}`);
     res.status(500).json({ error: { message: 'Internal server error' } });

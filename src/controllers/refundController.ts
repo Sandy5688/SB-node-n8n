@@ -84,10 +84,10 @@ export async function getRefundStatusController(req: Request, res: Response): Pr
       return;
     }
     
-    // Remove internal fields
-    delete refund._id;
+    // Remove internal fields using destructuring
+    const { _id, ...safeRefund } = refund;
     
-    res.json({ refund });
+    res.json({ refund: safeRefund });
   } catch (err: any) {
     logger.error(`Get refund status failed: ${err?.message}`);
     res.status(500).json({ error: { message: 'Internal server error' } });

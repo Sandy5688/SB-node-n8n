@@ -40,7 +40,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'rejected',
             rejection_reason: 'amount_exceeds_limit',
-            updatedAt: new Date(),
+            updated_at: new Date(),
           },
         },
         { upsert: true }
@@ -63,7 +63,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'failed',
             error: 'transaction_not_found',
-            updatedAt: new Date(),
+            updated_at: new Date(),
           },
         },
         { upsert: true }
@@ -83,7 +83,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
       return { ok: false, reason: 'already_refunded' };
     }
 
-    // Update refund status to processing
+    // Update refund status to processing (using snake_case for timestamps)
+    const now = new Date();
     await db.collection('refunds').updateOne(
       { refund_id },
       {
@@ -94,8 +95,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           amount_cents,
           reason,
           metadata,
-          startedAt: new Date(),
-          updatedAt: new Date(),
+          started_at: now,
+          updated_at: now,
         },
       },
       { upsert: true }
@@ -119,7 +120,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
       processed_at: new Date(),
     };
 
-    // Update refund with provider response
+    // Update refund with provider response (using snake_case for timestamps)
     await db.collection('refunds').updateOne(
       { refund_id },
       {
@@ -127,13 +128,13 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           status: 'completed',
           provider_refund_id: providerResult.refund_id,
           provider_status: providerResult.status,
-          completedAt: new Date(),
-          updatedAt: new Date(),
+          completed_at: new Date(),
+          updated_at: new Date(),
         },
       }
     );
 
-    // Update transaction with refund info
+    // Update transaction with refund info (using snake_case for timestamps)
     await db.collection('transactions').updateOne(
       { transaction_id },
       {
@@ -141,8 +142,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           refunded: true,
           refund_id: refund_id,
           refund_amount_cents: amount_cents,
-          refundedAt: new Date(),
-          updatedAt: new Date(),
+          refunded_at: new Date(),
+          updated_at: new Date(),
         },
       }
     );
@@ -170,7 +171,7 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
   } catch (err: any) {
     logger.error(`Refund job failed: id=${job.id} refund=${refund_id} error=${err?.message}`);
     
-    // Update refund with error
+    // Update refund with error (using snake_case for timestamps)
     try {
       const db = await getDb();
       await db.collection('refunds').updateOne(
@@ -179,8 +180,8 @@ export async function processRefundExecute(job: Job<RefundExecuteJobData>): Prom
           $set: {
             status: 'failed',
             error: err?.message,
-            failedAt: new Date(),
-            updatedAt: new Date(),
+            failed_at: new Date(),
+            updated_at: new Date(),
           },
         }
       );

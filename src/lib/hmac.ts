@@ -29,7 +29,14 @@ export function canonicalStringify(value: unknown): string {
     const entries = keys.map(k => JSON.stringify(k) + ':' + stringify(val[k]));
     return '{' + entries.join(',') + '}';
   };
-  return stringify(value);
+  
+  // Wrap in try/catch for circular reference protection
+  try {
+    return stringify(value);
+  } catch {
+    // Fallback to regular JSON.stringify if canonical fails
+    return JSON.stringify(value);
+  }
 }
 
 

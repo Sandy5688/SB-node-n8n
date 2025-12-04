@@ -23,9 +23,52 @@ import { registerFlowRoutes } from './api/flow';
 
 const app = express();
 
+// Trust proxy for proper IP detection behind reverse proxy/load balancer
+app.set('trust proxy', 1);
+
 // Global middleware (ensure /webhook/entry runs BEFORE JSON parsing to preserve raw body)
-app.use(helmet());
-app.use(cors());
+// Helmet security headers (noSniff, frameguard, hidePoweredBy enabled by default)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Disable for API compatibility
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+// CORS: Restrict to approved origins
+const corsOrigins = env.CORS_ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : true, // Allow all if not configured
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Signature',
+    'X-Timestamp',
+    'X-Idempotency-Key',
+    'X-Correlation-Id',
+    'X-Request-Id',
+  ],
+  exposedHeaders: ['X-Correlation-Id', 'Idempotency-Replayed'],
+  credentials: true,
+  maxAge: 86400, // 24 hours preflight cache
+}));
+
 app.use(compression());
 app.use(correlationId);
 
@@ -77,8 +120,26 @@ async function start() {
   }
   app.listen(port, () => {
     logger.info(`Server listening on port ${port}`);
+    
+    // Signal PM2 that the app is ready (for wait_ready: true)
+    if (process.send) {
+      process.send('ready');
+    }
   });
 }
+
+// Graceful shutdown handler
+async function shutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+  
+  // Give time for health checks to fail and load balancer to remove
+  setTimeout(() => {
+    process.exit(0);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
 void start();
 
