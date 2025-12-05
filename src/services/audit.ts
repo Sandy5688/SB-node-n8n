@@ -1,5 +1,5 @@
 import { getDb } from '../db/mongo';
-import { logger } from '../lib/logger';
+import { logger, maskPII } from '../lib/logger';
 
 type AuditEvent = {
   action: string;
@@ -11,13 +11,20 @@ type AuditEvent = {
   details?: Record<string, any>;
 };
 
+/**
+ * Write an audit log entry with PII masking applied
+ */
 export async function auditLog(event: AuditEvent): Promise<void> {
   try {
     const db = await getDb();
-    await db.collection('audit_logs').insertOne({
+    
+    // Apply PII masking to the entire event before storing
+    const maskedEvent = maskPII({
       ...event,
       at: event.at || new Date()
-    });
+    }) as Record<string, unknown>;
+    
+    await db.collection('audit_logs').insertOne(maskedEvent);
   } catch (e: any) {
     logger.warn(`auditLog insert failed: ${e?.message}`);
   }

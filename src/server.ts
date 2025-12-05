@@ -50,10 +50,11 @@ app.use(helmet({
   },
 }));
 
-// CORS: Restrict to approved origins
+// CORS: Restrict to approved origins (never allow * or true in production)
 const corsOrigins = env.CORS_ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean);
+const defaultOrigin = 'https://app.yourdomain.com';
 app.use(cors({
-  origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : true, // Allow all if not configured
+  origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : defaultOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',

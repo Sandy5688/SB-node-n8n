@@ -64,8 +64,8 @@ export async function createUserController(req: Request, res: Response): Promise
       name,
       metadata: metadata || {},
       status: 'active',
-      createdAt: now,
-      updatedAt: now,
+      created_at: now,
+      updated_at: now,
     };
     
     await db.collection('users').insertOne(newUser);
@@ -90,7 +90,7 @@ export async function updateUserController(req: Request, res: Response): Promise
   try {
     const db = await getDb();
     
-    const updateFields: any = { updatedAt: new Date() };
+    const updateFields: any = { updated_at: new Date() };
     if (email !== undefined) updateFields.email = email;
     if (phone !== undefined) updateFields.phone = phone;
     if (name !== undefined) updateFields.name = name;

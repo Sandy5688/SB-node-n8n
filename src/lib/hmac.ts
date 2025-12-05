@@ -33,9 +33,17 @@ export function canonicalStringify(value: unknown): string {
   // Wrap in try/catch for circular reference protection
   try {
     return stringify(value);
-  } catch {
-    // Fallback to regular JSON.stringify if canonical fails
-    return JSON.stringify(value);
+  } catch (err) {
+    // Return [CIRCULAR] marker for circular references to allow signature computation
+    if (err instanceof TypeError && String(err.message).toLowerCase().includes('circular')) {
+      return '"[CIRCULAR]"';
+    }
+    // Fallback to regular JSON.stringify for other errors
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '"[CIRCULAR]"';
+    }
   }
 }
 

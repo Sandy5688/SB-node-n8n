@@ -31,9 +31,9 @@ export async function requestRefund(input: RefundRequestInput): Promise<RefundRe
     payment_intent_id: input.payment_intent_id,
     amount_cents: input.amount_cents,
     status: needsApproval ? 'pending_approval' : 'accepted',
-    correlationId: input.correlationId,
-    createdAt: now,
-    updatedAt: now
+    correlation_id: input.correlationId,
+    created_at: now,
+    updated_at: now
   });
 
   if (needsApproval) {

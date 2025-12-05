@@ -13,10 +13,10 @@ const dlqQueues: Map<string, Queue> = new Map();
 // Worker health tracking
 interface WorkerHealthStatus {
   status: 'running' | 'stopped' | 'error';
-  lastJobAt?: Date;
-  jobsProcessed: number;
-  jobsFailed: number;
-  startedAt: Date;
+  last_job_at?: Date;
+  jobs_processed: number;
+  jobs_failed: number;
+  started_at: Date;
 }
 
 const workerHealth: Map<string, WorkerHealthStatus> = new Map();
@@ -75,9 +75,9 @@ export async function startWorkers(): Promise<void> {
     // Initialize health status
     workerHealth.set(queueName, {
       status: 'running',
-      jobsProcessed: 0,
-      jobsFailed: 0,
-      startedAt: new Date()
+      jobs_processed: 0,
+      jobs_failed: 0,
+      started_at: new Date()
     });
     
     const worker = new Worker(queueName, processor, {
@@ -96,8 +96,8 @@ export async function startWorkers(): Promise<void> {
       // Update health status
       const health = workerHealth.get(queueName);
       if (health) {
-        health.lastJobAt = new Date();
-        health.jobsProcessed++;
+        health.last_job_at = new Date();
+        health.jobs_processed++;
       }
     });
 
@@ -107,8 +107,8 @@ export async function startWorkers(): Promise<void> {
       // Update health status
       const health = workerHealth.get(queueName);
       if (health) {
-        health.lastJobAt = new Date();
-        health.jobsFailed++;
+        health.last_job_at = new Date();
+        health.jobs_failed++;
       }
       
       // Push to Dead Letter Queue after max retries (default 3)
@@ -123,7 +123,7 @@ export async function startWorkers(): Promise<void> {
               error: err.message,
               stack: err.stack,
               attemptsMade: job.attemptsMade,
-              failedAt: new Date().toISOString(),
+              failed_at: new Date().toISOString(),
             });
             logger.warn(`Job moved to DLQ: queue=${queueName}_dlq job=${job.id}`);
           } catch (dlqErr: any) {

@@ -1,17 +1,193 @@
 # Node Backend Patch Notes
 
-**Date:** December 4, 2025  
-**Version:** 2.0.0
+**Date:** December 5, 2025  
+**Version:** 2.1.0
 
 ---
 
 ## Summary
 
-This major patch implements the complete Rokeeb n8n Node Patch List, covering 13 phases of security hardening, reliability improvements, and production readiness enhancements. All changes have been tested and validated with no linter errors.
+This patch implements the Rokeeb n8n Node 5 Dec requirements, including production Dockerfile updates, PII masking, snake_case standardization, and comprehensive edge case testing.
 
 ---
 
-## Patch List Implementation (December 4, 2025)
+## Patch List Implementation (December 5, 2025)
+
+### P0 Critical Items ✅
+
+| # | Item | Status | File(s) |
+|---|------|--------|---------|
+| 1 | Production Dockerfile (multi-stage, Alpine, `nodeuser`, curl healthcheck) | ✅ | `Dockerfile.prod` |
+| 2 | PM2 ready signal + kill_timeout | ✅ | Already implemented |
+| 3 | CORS default to `https://app.yourdomain.com` | ✅ | `src/server.ts` |
+| 4 | Final indexes migration + capped `idempotency_keys` (2GB) | ✅ | `migrations/20251205000001-final-indexes.js` |
+| 5 | DLQ routing on max retries | ✅ | Already implemented |
+| 6 | Secret length validation (≥32 chars) | ✅ | Already implemented |
+
+### P1 Important Items ✅
+
+| # | Item | Status | File(s) |
+|---|------|--------|---------|
+| 7 | flowExecutor jitter (50-150ms) | ✅ | `src/workers/flowExecutor.ts` |
+| 8 | Idempotency `_idempotent` flag in body | ✅ | Already implemented |
+| 9 | HMAC circular reference → `"[CIRCULAR]"` | ✅ | `src/lib/hmac.ts` |
+| 10 | Health Redis `aof_current_rewrite_time_sec` | ✅ | `src/controllers/healthController.ts` |
+| 11 | PII masking (email/phone/token) | ✅ | `src/lib/logger.ts`, `src/services/audit.ts` |
+| 12 | snake_case sweep (all timestamps) | ✅ | 12 files |
+| 13 | Capped `idempotency_keys` (2GB) | ✅ | In migration |
+| 14 | Queue concurrency clamping (1-50) with logging | ✅ | `src/config/env.ts` |
+| 15 | Edge tests (DLQ, circular, truncation, replay) | ✅ | `tests/edge-cases.test.ts` |
+
+---
+
+## Breaking Changes (December 5, 2025)
+
+### 1. **snake_case Timestamp Fields** (CRITICAL)
+
+All database timestamp fields are now **snake_case**. This is a breaking change from the previous camelCase convention.
+
+| Old Field (camelCase) | New Field (snake_case) |
+|-----------------------|------------------------|
+| `createdAt` | `created_at` |
+| `updatedAt` | `updated_at` |
+| `expiresAt` | `expires_at` |
+| `startedAt` | `started_at` |
+| `completedAt` | `completed_at` |
+| `failedAt` | `failed_at` |
+| `deliveredAt` | `delivered_at` |
+| `lastRetryAt` | `last_retry_at` |
+| `ocrStartedAt` | `ocr_started_at` |
+| `ocrCompletedAt` | `ocr_completed_at` |
+| `lastError` | `last_error` |
+| `providerMessageId` | `provider_message_id` |
+
+**Migration Required:** Existing data with camelCase fields will not be found by queries using snake_case fields. Run the cleanup job or manually update existing documents.
+
+### 2. **CORS Default Origin**
+
+When `CORS_ALLOWED_ORIGINS` is not set, the API now defaults to `https://app.yourdomain.com` instead of allowing all origins.
+
+### 3. **Capped `idempotency_keys` Collection**
+
+The `idempotency_keys` collection is now a capped collection (2GB max). This means:
+- Old documents are automatically removed when the collection reaches 2GB
+- Documents cannot be deleted individually (only the TTL index handles cleanup)
+- The collection has a maximum of 10 million documents
+
+---
+
+## New Features
+
+### PII Masking
+
+All logs and audit records now automatically mask PII:
+
+| Data Type | Example Input | Masked Output |
+|-----------|---------------|---------------|
+| Email | `user@example.com` | `u***@e***.com` |
+| Phone | `+1234567890` | `+123***890` |
+| Tokens | `tok_abc123xyz` | `tok_***` |
+| Bearer | `Bearer eyJ...` | `Bearer ***` |
+
+Fields named `password`, `secret`, or `token` are fully masked as `***`.
+
+### Jitter on Flow Delays
+
+Flow executor delay steps now add 50-150ms jitter to prevent thundering herd on retries:
+
+```json
+{
+  "delayed_ms": 1087,
+  "base_ms": 1000,
+  "jitter_ms": 87
+}
+```
+
+### Enhanced Health Check
+
+Deep health mode (`/health?deep=true`) now includes Redis AOF status:
+
+```json
+{
+  "redis_info": {
+    "rdb_last_save_time": "1701792000",
+    "aof_enabled": "1",
+    "aof_current_rewrite_time_sec": "-1"
+  }
+}
+```
+
+---
+
+## New Files
+
+| File | Description |
+|------|-------------|
+| `migrations/20251205000001-final-indexes.js` | Final indexes + capped collection migration |
+| `tests/edge-cases.test.ts` | 21 edge case tests |
+| `templates/.gitkeep` | Templates directory placeholder |
+
+---
+
+## Files Modified (December 5, 2025)
+
+```
+Dockerfile.prod
+src/server.ts
+src/config/env.ts
+src/lib/logger.ts
+src/lib/hmac.ts
+src/services/audit.ts
+src/controllers/healthController.ts
+src/controllers/userController.ts
+src/workers/flowExecutor.ts
+src/workers/messagingRetry.ts
+src/workers/ocrProcessor.ts
+src/workers/cleanupDaily.ts
+src/queue/worker.ts
+src/middleware/idempotency.ts
+src/middleware/dedup.ts
+src/middleware/signature.ts
+src/middleware/auditRateLimit.ts
+src/services/messaging.ts
+src/services/payments.ts
+src/services/otp.ts
+src/db/indexes.ts
+```
+
+---
+
+## Verification Commands
+
+```bash
+# Build succeeds
+npm run build
+
+# Tests pass
+npm test -- tests/edge-cases.test.ts
+
+# Verify snake_case sweep complete
+grep -r "startedAt\|completedAt\|failedAt\|updatedAt\|createdAt" src/
+# Should return 0 matches
+
+# Docker build (production)
+docker build -f Dockerfile.prod -t n8n-backend:prod .
+
+# Run migrations
+npm run migrate:up
+
+# Verify capped collection
+mongo --eval "db.idempotency_keys.isCapped()"
+# Should return true
+```
+
+---
+
+## Previous Versions
+
+---
+
+## Version 2.0.0 (December 4, 2025)
 
 ### Phase 1: Critical Security & Bug Fixes ✅
 

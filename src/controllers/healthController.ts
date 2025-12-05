@@ -105,6 +105,7 @@ export async function healthCheckController(req: Request, res: Response): Promis
               maxmemory_human: memory.maxmemory_human || 'unlimited',
               rdb_last_save_time: persistence.rdb_last_save_time,
               aof_enabled: persistence.aof_enabled,
+              aof_current_rewrite_time_sec: persistence.aof_current_rewrite_time_sec,
               connected_clients: server.connected_clients,
             };
           } catch (infoErr: any) {

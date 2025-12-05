@@ -21,28 +21,28 @@ export async function processDailyCleanup(job: Job<CleanupDailyJobData>): Promis
     // 1. Clean up expired processed_events (beyond TTL)
     // Note: TTL index handles this automatically, but we can clean orphaned records
     const expiredEventsResult = await db.collection('processed_events').deleteMany({
-      createdAt: { $lt: new Date(Date.now() - 72 * 60 * 60 * 1000) },
+      created_at: { $lt: new Date(Date.now() - 72 * 60 * 60 * 1000) },
     });
     results.expired_events_deleted = expiredEventsResult.deletedCount;
     logger.info(`Cleaned up expired events: ${expiredEventsResult.deletedCount}`);
 
     // 2. Clean up expired idempotency keys (beyond TTL)
     const expiredIdempotencyResult = await db.collection('idempotency_keys').deleteMany({
-      expiresAt: { $lt: new Date() },
+      expires_at: { $lt: new Date() },
     });
     results.expired_idempotency_deleted = expiredIdempotencyResult.deletedCount;
     logger.info(`Cleaned up expired idempotency keys: ${expiredIdempotencyResult.deletedCount}`);
 
     // 3. Clean up expired OTPs (beyond TTL)
     const expiredOtpsResult = await db.collection('otps').deleteMany({
-      expiresAt: { $lt: new Date() },
+      expires_at: { $lt: new Date() },
     });
     results.expired_otps_deleted = expiredOtpsResult.deletedCount;
     logger.info(`Cleaned up expired OTPs: ${expiredOtpsResult.deletedCount}`);
 
     // 4. Clean up old signature replay guards (beyond TTL)
     const expiredReplaysResult = await db.collection('signature_replays').deleteMany({
-      expiresAt: { $lt: new Date() },
+      expires_at: { $lt: new Date() },
     });
     results.expired_replays_deleted = expiredReplaysResult.deletedCount;
     logger.info(`Cleaned up expired signature replays: ${expiredReplaysResult.deletedCount}`);
@@ -73,7 +73,7 @@ export async function processDailyCleanup(job: Job<CleanupDailyJobData>): Promis
     const messageRetentionDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const oldMessagesResult = await db.collection('messages').deleteMany({
       status: 'delivered',
-      deliveredAt: { $lt: messageRetentionDate },
+      delivered_at: { $lt: messageRetentionDate },
     });
     results.old_messages_deleted = oldMessagesResult.deletedCount;
     logger.info(`Cleaned up old messages: ${oldMessagesResult.deletedCount}`);

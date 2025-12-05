@@ -1,7 +1,7 @@
 import { Job } from 'bullmq';
 import { logger } from '../lib/logger';
 import { getDb } from '../db/mongo';
-import { http } from '../lib/http';
+import { http, getJitterDelay } from '../lib/http';
 import { env } from '../config/env';
 
 interface FlowExecuteJobData {
@@ -206,8 +206,13 @@ async function executeConditionStep(step: FlowStep, context: Record<string, any>
 
 async function executeDelayStep(step: FlowStep): Promise<any> {
   const { delay_ms } = step.config;
-  await new Promise(resolve => setTimeout(resolve, delay_ms || 1000));
-  return { delayed_ms: delay_ms };
+  const baseDelay = delay_ms || 1000;
+  // Add jitter (50-150ms) to prevent thundering herd on retries
+  const jitterMs = getJitterDelay(100);
+  const totalDelay = baseDelay + jitterMs;
+  await new Promise(resolve => setTimeout(resolve, totalDelay));
+  logger.debug(`Delay step executed: base=${baseDelay}ms jitter=${jitterMs}ms total=${totalDelay}ms`);
+  return { delayed_ms: totalDelay, base_ms: baseDelay, jitter_ms: jitterMs };
 }
 
 function replaceVariables(obj: any, context: Record<string, any>): any {

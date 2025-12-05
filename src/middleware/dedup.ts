@@ -26,8 +26,8 @@ export async function deduplicate(req: Request, res: Response, next: NextFunctio
     const expiresAt = new Date(now.getTime() + 72 * 60 * 60 * 1000);
     await db.collection('processed_events').insertOne({
       internal_event_id: internalEventId,
-      createdAt: now,
-      expiresAt
+      created_at: now,
+      expires_at: expiresAt
     });
     next();
   } catch (e: any) {

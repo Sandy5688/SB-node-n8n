@@ -124,8 +124,8 @@ export function verifyHmacSignature() {
       const expiresAt = new Date(nowDate.getTime() + (env.SIGNATURE_TOLERANCE_SEC * 1000));
       await db.collection('signature_replays').insertOne({
         key,
-        createdAt: nowDate,
-        expiresAt
+        created_at: nowDate,
+        expires_at: expiresAt
       });
     } catch (e: any) {
       if (e?.code === 11000) {

@@ -7,7 +7,7 @@ interface AuditRateLimitRecord {
   event_type: string;
   count: number;
   window_start: Date;
-  expiresAt: Date;
+  expires_at: Date;
 }
 
 const AUDIT_RATE_LIMIT = 5; // events per minute per IP
@@ -25,7 +25,7 @@ export async function checkAuditRateLimit(
     const db = await getDb();
     const now = new Date();
     const windowStart = new Date(now.getTime() - WINDOW_MS);
-    const expiresAt = new Date(now.getTime() + WINDOW_MS);
+    const expires_at = new Date(now.getTime() + WINDOW_MS);
     
     const key = `${ip}:${eventType}`;
     
@@ -50,7 +50,7 @@ export async function checkAuditRateLimit(
         { ip, event_type: eventType, window_start: existing.window_start },
         {
           $inc: { count: 1 },
-          $set: { expiresAt },
+          $set: { expires_at },
         }
       );
       
@@ -62,7 +62,7 @@ export async function checkAuditRateLimit(
         event_type: eventType,
         count: 1,
         window_start: now,
-        expiresAt,
+        expires_at,
       });
       
       return { allowed: true, remaining: AUDIT_RATE_LIMIT - 1 };

@@ -16,9 +16,9 @@ interface IdempotencyRecord {
   responseBodyText?: string;
   responseIsJson?: boolean;
   responseTruncated?: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  expiresAt: Date;
+  created_at: Date;
+  updated_at: Date;
+  expires_at: Date;
 }
 
 function sha256Hex(input: string | Buffer): string {
@@ -67,9 +67,9 @@ export function idempotency(): (req: Request, res: Response, next: NextFunction)
         key,
         requestHash,
         status: 'in_progress',
-        createdAt: now,
-        updatedAt: now,
-        expiresAt
+        created_at: now,
+        updated_at: now,
+        expires_at: expiresAt
       };
       await db.collection<IdempotencyRecord>('idempotency_keys').insertOne(initialRecord);
     } catch (e: any) {
@@ -141,7 +141,7 @@ export function idempotency(): (req: Request, res: Response, next: NextFunction)
         const status: IdempotencyStatus = responseStatus >= 500 ? 'failed' : 'succeeded';
         const update: Partial<IdempotencyRecord> = {
           status,
-          updatedAt: new Date(),
+          updated_at: new Date(),
           responseStatus,
           responseIsJson: wasJson
         };

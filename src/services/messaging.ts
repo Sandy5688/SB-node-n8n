@@ -51,7 +51,7 @@ async function sendSlack(to: string, text: string): Promise<{ ok: boolean; provi
 export async function sendMessageWithFallback(req: SendRequest) {
   const db = await getDb();
   const tpl = await renderTemplate(req.template_id, req.params);
-  const createdAt = new Date();
+  const created_at = new Date();
   const base = {
     to: req.to,
     channel: req.channel,
@@ -59,7 +59,7 @@ export async function sendMessageWithFallback(req: SendRequest) {
     params: req.params,
     status: 'pending',
     attempts: 0,
-    createdAt
+    created_at
   };
   const { insertedId } = await db.collection('messages').insertOne(base);
 
@@ -77,9 +77,9 @@ export async function sendMessageWithFallback(req: SendRequest) {
       {
         $set: {
           status: result.ok ? 'sent' : 'failed',
-          lastError: result.error,
-          providerMessageId: result.providerId,
-          updatedAt: new Date()
+          last_error: result.error,
+          provider_message_id: result.providerId,
+          updated_at: new Date()
         },
         $inc: { attempts: 1 }
       }

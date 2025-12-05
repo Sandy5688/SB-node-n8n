@@ -32,8 +32,14 @@ const schema = z.object({
   OTP_SEND_ON_GENERATE: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   REDIS_URL: z.string().optional(),
   ENABLE_WORKERS: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
-  // Queue concurrency: min 1, max 50
-  QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+  // Queue concurrency: clamp to 1-50 range
+  QUEUE_CONCURRENCY: z.coerce.number().int().default(5).transform(v => {
+    const clamped = Math.max(1, Math.min(50, v));
+    if (clamped !== v) {
+      console.log(`Effective concurrency: ${clamped} (requested: ${v}, min: 1, max: 50)`);
+    }
+    return clamped;
+  }),
   TEMPLATE_DIR: z.string().default('templates'),
 
   // Idempotency (default 3600s = 1 hour as per requirements)

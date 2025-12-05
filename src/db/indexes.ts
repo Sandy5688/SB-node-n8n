@@ -7,12 +7,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { unique: true, name: 'uniq_internal_event_id' }
   );
   await db.collection('processed_events').createIndex(
-    { createdAt: 1 },
+    { created_at: 1 },
     { expireAfterSeconds: 72 * 60 * 60, name: 'ttl_processed_events_72h' }
   );
   await db.collection('processed_events').createIndex(
-    { expiresAt: 1 },
-    { expireAfterSeconds: 0, name: 'ttl_processed_events_expiresAt', sparse: true }
+    { expires_at: 1 },
+    { expireAfterSeconds: 0, name: 'ttl_processed_events_expires_at', sparse: true }
   );
 
   // Idempotency storage
@@ -21,7 +21,7 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { unique: true, name: 'uniq_idempotency_key' }
   );
   await db.collection('idempotency_keys').createIndex(
-    { expiresAt: 1 },
+    { expires_at: 1 },
     { expireAfterSeconds: 0, name: 'ttl_idempotency_keys' }
   );
 
@@ -30,7 +30,7 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { unique: true, name: 'uniq_otp_id' }
   );
   await db.collection('otps').createIndex(
-    { expiresAt: 1 },
+    { expires_at: 1 },
     { expireAfterSeconds: 0, name: 'ttl_otps' }
   );
 
@@ -40,11 +40,11 @@ export async function ensureIndexes(db: Db): Promise<void> {
   );
 
   await db.collection('messages').createIndex(
-    { to: 1, channel: 1, createdAt: -1 },
+    { to: 1, channel: 1, created_at: -1 },
     { name: 'messages_to_channel' }
   );
   await db.collection('messages').createIndex(
-    { status: 1, createdAt: -1 },
+    { status: 1, created_at: -1 },
     { name: 'messages_status' }
   );
 
@@ -57,8 +57,8 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { unique: true, name: 'uniq_refund_id' }
   );
   await db.collection('refunds').createIndex(
-    { status: 1, createdAt: -1 },
-    { name: 'refunds_status_createdAt' }
+    { status: 1, created_at: -1 },
+    { name: 'refunds_status_created_at' }
   );
 
   // Signature replay guard
@@ -67,7 +67,7 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { unique: true, name: 'uniq_signature_replay_key' }
   );
   await db.collection('signature_replays').createIndex(
-    { expiresAt: 1 },
+    { expires_at: 1 },
     { expireAfterSeconds: 0, name: 'ttl_signature_replays' }
   );
 
@@ -77,7 +77,7 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { name: 'audit_rate_limit_lookup' }
   );
   await db.collection('audit_rate_limits').createIndex(
-    { expiresAt: 1 },
+    { expires_at: 1 },
     { expireAfterSeconds: 0, name: 'ttl_audit_rate_limits' }
   );
 
@@ -116,13 +116,13 @@ export async function ensureIndexes(db: Db): Promise<void> {
       validator: {
         $jsonSchema: {
           bsonType: 'object',
-          required: ['key', 'requestHash', 'status', 'createdAt', 'expiresAt'],
+          required: ['key', 'requestHash', 'status', 'created_at', 'expires_at'],
           properties: {
             key: { bsonType: 'string' },
             requestHash: { bsonType: 'string' },
             status: { enum: ['in_progress', 'succeeded', 'failed'] },
-            createdAt: { bsonType: 'date' },
-            expiresAt: { bsonType: 'date' }
+            created_at: { bsonType: 'date' },
+            expires_at: { bsonType: 'date' }
           }
         }
       }

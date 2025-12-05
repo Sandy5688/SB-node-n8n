@@ -19,8 +19,8 @@ export async function generateOtp(input: {
     subject: { type: input.subject_type, id: input.subject_id },
     hash,
     attempts: 0,
-    expiresAt,
-    createdAt: new Date()
+    expires_at: expiresAt,
+    created_at: new Date()
   });
   return { otp_id, code };
 }
@@ -29,7 +29,7 @@ export async function verifyOtp(input: { otp_id: string; code: string }): Promis
   const db = await getDb();
   const doc = await db.collection('otps').findOne({ otp_id: input.otp_id });
   if (!doc) return { valid: false, remaining: 0 };
-  if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) {
+  if (doc.expires_at && new Date(doc.expires_at) < new Date()) {
     return { valid: false, remaining: 0 };
   }
   if (doc.attempts >= 3) return { valid: false, remaining: 0 };

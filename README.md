@@ -286,10 +286,11 @@ curl -X POST http://localhost:3000/webhook/entry \
 
 - **Queue backend**: BullMQ with Redis
 - **Workers implemented**: OCR, messaging retry, refund execution, flow orchestration, daily cleanup
+- **Dead Letter Queues**: Failed jobs after max retries are moved to `${queue}_dlq`
 - **Configuration**:
   - Set `REDIS_URL` (e.g., `redis://localhost:6379`)
   - Set `ENABLE_WORKERS=true` for worker process
-  - Configure `QUEUE_CONCURRENCY` (default 4)
+  - Configure `QUEUE_CONCURRENCY` (default 5, clamped to 1-50)
 
 Start workers:
 ```bash
@@ -325,6 +326,12 @@ Migrations include:
 - Collection indexes (with TTL for automatic cleanup)
 - JSON schema validators
 - Audit rate-limiting indexes
+- Capped `idempotency_keys` collection (2GB)
+
+**Important:** Run migrations after any upgrade:
+```bash
+npm run migrate:up
+```
 
 ## Testing
 
@@ -343,6 +350,23 @@ npm test tests/e2e/
 ```
 
 ## Production Deployment
+
+### Using Docker (Production)
+
+```bash
+# Build production image
+docker build -f Dockerfile.prod -t n8n-backend:prod .
+
+# Run container
+docker run -d --name n8n-backend \
+  -p 3000:3000 \
+  --env-file .env \
+  n8n-backend:prod
+
+# Verify (runs as non-root user 'nodeuser')
+docker exec n8n-backend whoami  # → nodeuser
+curl http://localhost:3000/health  # → 200 OK
+```
 
 ### Using Docker Compose
 
@@ -388,14 +412,16 @@ pm2 reload pm2.config.js
 ### Environment Variables
 
 Required for production:
-- `HMAC_SECRET` - Generate: `openssl rand -hex 32`
-- `JWT_SECRET` - Generate: `openssl rand -hex 32`
+- `HMAC_SECRET` - Generate: `openssl rand -hex 32` (minimum 32 characters)
+- `JWT_SECRET` - Generate: `openssl rand -hex 32` (minimum 32 characters)
 - `MONGO_URI` - MongoDB connection string
 - `REDIS_URL` - Redis connection string (for queues)
 - `N8N_INGEST_URL` - Your n8n webhook URL
-- `N8N_TOKEN` - Shared secret for n8n ↔ backend auth
+- `N8N_TOKEN` - Shared secret for n8n ↔ backend auth (minimum 32 characters)
 
 Optional but recommended:
+- `CORS_ALLOWED_ORIGINS` - Comma-separated list (defaults to `https://app.yourdomain.com`)
+- `QUEUE_CONCURRENCY` - Worker concurrency (1-50, default 5)
 - Messaging: `TWILIO_*`, `SENDGRID_*`, `SLACK_*`
 - Monitoring: Configure `/metrics` endpoint with Prometheus
 
@@ -413,11 +439,13 @@ See `env.example` for complete list.
 ## ✨ What Makes This Special
 
 - **Security-First:** HMAC, JWT, CIDR, rate limiting, audit logs, no secrets in code
+- **PII Protection:** Automatic masking of emails, phones, and tokens in logs and audit records
 - **Production-Grade:** Idempotency, retries, error handling, observability, correlation IDs
-- **Fully Documented:** 4 comprehensive guides (~1,800 lines of documentation)
+- **Dead Letter Queues:** Failed jobs preserved for debugging and manual retry
+- **Fully Documented:** Comprehensive guides and patch notes
 - **Turnkey Solution:** Backend + 5 n8n workflows ready to import and run
 - **Best Practices:** Clean architecture, TypeScript, tested, maintainable, scalable
-- **100% Compliant:** All 15 tasks from project-guide.txt implemented and verified
+- **snake_case Convention:** All database fields use snake_case for consistency
 
 ---
 
