@@ -104,6 +104,7 @@ export async function healthCheckController(req: Request, res: Response): Promis
               used_memory_peak_human: memory.used_memory_peak_human,
               maxmemory_human: memory.maxmemory_human || 'unlimited',
               rdb_last_save_time: persistence.rdb_last_save_time,
+              rdb_last_bgsave_status: persistence.rdb_last_bgsave_status,
               aof_enabled: persistence.aof_enabled,
               aof_current_rewrite_time_sec: persistence.aof_current_rewrite_time_sec,
               connected_clients: server.connected_clients,
